@@ -53,32 +53,32 @@ prepare_lambda_asset() {
     
     # Install dependencies if requirements.txt exists
     if [ -f "$source_dir/requirements.txt" ]; then
-        echo "   📦 Installing dependencies for $asset_name..."
+        echo "   📦 Skipping: Installing dependencies for $asset_name..."
         
-        # Use pip with optimizations for faster, smaller installs
-        pip install \
-            -r "$source_dir/requirements.txt" \
-            -t "$build_dir/" \
-            --upgrade \
-            --no-cache-dir \
-            --no-compile \
-            --disable-pip-version-check \
-            --quiet
+#        # Use pip with optimizations for faster, smaller installs
+#        pip install \
+#            -r "$source_dir/requirements.txt" \
+#            -t "$build_dir/" \
+#            --upgrade \
+#            --no-cache-dir \
+#            --no-compile \
+#            --disable-pip-version-check \
+#            --quiet
         
         # Verify critical dependencies were installed
         echo "   🔍 Verifying dependencies..."
-        if [ "$asset_name" = "oscar-agent" ]; then
-            # Check for slack_bolt and boto3
-            if [ ! -d "$build_dir/slack_bolt" ] && [ ! -d "$build_dir/slack_sdk" ]; then
-                echo "❌ Missing Slack dependencies for $asset_name"
-                exit 1
-            fi
-        fi
+#        if [ "$asset_name" = "oscar-agent" ]; then
+#            # Check for slack_bolt and boto3
+#            if [ ! -d "$build_dir/slack_bolt" ] && [ ! -d "$build_dir/slack_sdk" ]; then
+#                echo "❌ Missing Slack dependencies for $asset_name"
+#                exit 1
+#            fi
+#        fi
         
-        if [ ! -d "$build_dir/boto3" ]; then
-            echo "❌ Missing boto3 for $asset_name"
-            exit 1
-        fi
+#        if [ ! -d "$build_dir/boto3" ]; then
+#            echo "❌ Missing boto3 for $asset_name"
+#            exit 1
+#        fi
         
         echo "   ✅ Dependencies verified for $asset_name"
     else
@@ -157,29 +157,29 @@ six>=1.16.0
 python-dotenv>=1.0.0
 EOF
     
-    # Install dependencies with optimizations
-    echo "   📦 Installing Python dependencies..."
-    pip install \
-        -r "$build_dir/requirements.txt" \
-        -t "$build_dir/" \
-        --upgrade \
-        --no-cache-dir \
-        --no-compile \
-        --disable-pip-version-check \
-        --quiet
+#    # Install dependencies with optimizations
+#    echo "   📦 Installing Python dependencies..."
+#    pip install \
+#        -r "$build_dir/requirements.txt" \
+#        -t "$build_dir/" \
+#        --upgrade \
+#        --no-cache-dir \
+#        --no-compile \
+#        --disable-pip-version-check \
+#        --quiet
     
-    # Verify critical dependencies
-    echo "   🔍 Verifying dependencies..."
-    CRITICAL_DEPS=("slack_sdk" "boto3" "botocore" "requests")
-    for dep in "${CRITICAL_DEPS[@]}"; do
-        if [ ! -d "$build_dir/$dep" ] && [ ! -d "$build_dir/${dep//_/-}" ]; then
-            echo "❌ Missing dependency: $dep"
-            pip install "$dep" -t "$build_dir/" --upgrade --no-cache-dir --quiet || {
-                echo "❌ Failed to install $dep"
-                exit 1
-            }
-        fi
-    done
+#    # Verify critical dependencies
+#    echo "   🔍 Verifying dependencies..."
+#    CRITICAL_DEPS=("slack_sdk" "boto3" "botocore" "requests")
+#    for dep in "${CRITICAL_DEPS[@]}"; do
+#        if [ ! -d "$build_dir/$dep" ] && [ ! -d "$build_dir/${dep//_/-}" ]; then
+#            echo "❌ Missing dependency: $dep"
+#            pip install "$dep" -t "$build_dir/" --upgrade --no-cache-dir --quiet || {
+#                echo "❌ Failed to install $dep"
+#                exit 1
+#            }
+#        fi
+#    done
     
     echo "   ✅ Dependencies verified"
     

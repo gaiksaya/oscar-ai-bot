@@ -32,7 +32,9 @@ from aws_cdk import (
     CfnOutput, custom_resources,
 
 )
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from constructs import Construct
+from utils.foundation_models import FoundationModels
 
 
 class OscarKnowledgeBaseStack(Stack):
@@ -46,21 +48,32 @@ class OscarKnowledgeBaseStack(Stack):
     - Vector embeddings using Titan and metadata extraction
     """
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    KNOWLEDGE_BASE_NAME_BASE = "oscar-kb"
+
+    @classmethod
+    def get_knowledge_base_name(cls, environment: str) -> str:
+        return f"{cls.KNOWLEDGE_BASE_NAME_BASE}-{environment}"
+
+    def __init__(self, scope: Construct, construct_id: str, environment: str, 
+                 github_repositories: List[str], **kwargs) -> None:
         """
         Initialize Knowledge Base stack.
 
         Args:
             scope: The CDK construct scope
             construct_id: The ID of the construct
+            environment: The deployment environment
+            github_repositories: List of GitHub repositories to sync
             **kwargs: Additional keyword arguments
         """
         super().__init__(scope, construct_id, **kwargs)
+        
+        self.github_repositories = github_repositories
 
         # Get configuration from environment
-        self.account_id = os.environ.get("CDK_DEFAULT_ACCOUNT")
-        self.aws_region = os.environ.get("CDK_DEFAULT_REGION", "us-east-1")
-        self.env_name = os.environ.get("ENVIRONMENT", "dev")
+        self.account_id = self.env.account
+        self.aws_region = self.env.region
+        self.env_name = environment
 
         # Determine removal policy based on environment
         self.removal_policy = (
@@ -84,15 +97,21 @@ class OscarKnowledgeBaseStack(Stack):
 
         # Create Knowledge Base
         self.knowledge_base = self._create_knowledge_base()
-        #
+
         # Create data source for document ingestion
         self.data_source = self._create_data_source()
+
+        # Create Lambda function for GitHub docs uploader
+        self.docs_uploader_lambda = self._create_docs_uploader_lambda()
 
         # Create Lambda function for automatic document synchronization
         self.sync_lambda = self._create_document_sync_lambda()
 
         # Add S3 event notification for automatic sync
         self._configure_s3_notifications()
+        
+        # Add EventBridge schedule for docs uploader
+        self._configure_docs_uploader_schedule()
 
         # Create outputs
         self._create_outputs()
@@ -106,7 +125,7 @@ class OscarKnowledgeBaseStack(Stack):
         """
         bucket = s3.Bucket(
             self, "OscarDocumentsBucket",
-            bucket_name=f"oscar-knowledge-docs-cdk-created-{self.account_id}-{self.aws_region}",
+            bucket_name=f"oscar-knowledge-docs-{self.env_name}-{self.account_id}-{self.aws_region}",
             versioned=True,
             removal_policy=self.removal_policy,
             auto_delete_objects=self.removal_policy == RemovalPolicy.DESTROY,
@@ -255,7 +274,7 @@ class OscarKnowledgeBaseStack(Stack):
                     "bedrock:InvokeModel"
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.aws_region}::foundation-model/amazon.titan-embed-text-v2:0"
+                    f"arn:aws:bedrock:{self.aws_region}::foundation-model/{FoundationModels.AMAZON_TITAN_2_0.value}"
                 ]
             )
         )
@@ -417,13 +436,13 @@ class OscarKnowledgeBaseStack(Stack):
         # Create the Knowledge Base using existing service role
         knowledge_base = bedrock.CfnKnowledgeBase(
             self, "OscarKnowledgeBase",
-            name=f"oscar-kb-cdk-{self.env_name}",
+            name=self.get_knowledge_base_name(self.env_name),
             description="OSCAR Knowledge Base for OpenSearch release management documentation",
             role_arn=self.kb_service_role.role_arn,
             knowledge_base_configuration=bedrock.CfnKnowledgeBase.KnowledgeBaseConfigurationProperty(
                 type="VECTOR",
                 vector_knowledge_base_configuration=bedrock.CfnKnowledgeBase.VectorKnowledgeBaseConfigurationProperty(
-                    embedding_model_arn=f"arn:aws:bedrock:{self.aws_region}::foundation-model/amazon.titan-embed-text-v2:0"
+                    embedding_model_arn=f"arn:aws:bedrock:{self.aws_region}::foundation-model/{FoundationModels.AMAZON_TITAN_2_0.value}"
                 )
             ),
             storage_configuration=bedrock.CfnKnowledgeBase.StorageConfigurationProperty(
@@ -463,8 +482,7 @@ class OscarKnowledgeBaseStack(Stack):
             data_source_configuration=bedrock.CfnDataSource.DataSourceConfigurationProperty(
                 type="S3",
                 s3_configuration=bedrock.CfnDataSource.S3DataSourceConfigurationProperty(
-                    bucket_arn=self.documents_bucket.bucket_arn,
-                    inclusion_prefixes=["docs/"],  # Only ingest from docs/ prefix
+                    bucket_arn=self.documents_bucket.bucket_arn
                 )
             ),
             vector_ingestion_configuration=bedrock.CfnDataSource.VectorIngestionConfigurationProperty(
@@ -490,6 +508,8 @@ class OscarKnowledgeBaseStack(Stack):
         Returns:
             The Lambda function for document sync
         """
+        from aws_cdk.aws_lambda_python_alpha import PythonFunction
+        
         # Create execution role for the Lambda function
         sync_lambda_role = iam.Role(
             self, "DocumentSyncLambdaRole",
@@ -508,9 +528,9 @@ class OscarKnowledgeBaseStack(Stack):
                 sid="BedrockAgentAccess",
                 effect=iam.Effect.ALLOW,
                 actions=[
-                    "bedrock-agent:StartIngestionJob",
-                    "bedrock-agent:ListIngestionJobs",
-                    "bedrock-agent:GetIngestionJob"
+                    "bedrock:StartIngestionJob",
+                    "bedrock:ListIngestionJobs",
+                    "bedrock:GetIngestionJob"
                 ],
                 resources=[
                     f"arn:aws:bedrock:{self.aws_region}:{self.account_id}:knowledge-base/{self.knowledge_base.attr_knowledge_base_id}",
@@ -520,11 +540,13 @@ class OscarKnowledgeBaseStack(Stack):
         )
 
         # Create the Lambda function
-        sync_lambda = lambda_.Function(
+        sync_lambda = PythonFunction(
             self, "DocumentSyncLambda",
+            function_name=f"DocumentSyncLambda-{self.env_name}",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="document_sync_handler.lambda_handler",
-            code=lambda_.Code.from_asset("lambda"),
+            handler="lambda_handler",
+            entry="lambda/knowledge-base",
+            index="document_sync_handler.py",
             role=sync_lambda_role,
             timeout=Duration.minutes(5),
             memory_size=256,
@@ -550,73 +572,66 @@ class OscarKnowledgeBaseStack(Stack):
         # Add S3 event notifications for document changes
         self.documents_bucket.add_event_notification(
             s3.EventType.OBJECT_CREATED,
-            s3n.LambdaDestination(self.sync_lambda),
-            s3.NotificationKeyFilter(prefix="docs/")
+            s3n.LambdaDestination(self.sync_lambda)
         )
 
         self.documents_bucket.add_event_notification(
             s3.EventType.OBJECT_REMOVED,
-            s3n.LambdaDestination(self.sync_lambda),
-            s3.NotificationKeyFilter(prefix="docs/")
+            s3n.LambdaDestination(self.sync_lambda)
         )
+
+    def _create_docs_uploader_lambda(self) -> lambda_.Function:
+        """
+        Create Lambda function for uploading GitHub documentation to S3.
+        
+        Returns:
+            The docs uploader Lambda function
+        """
+        function = lambda_.DockerImageFunction(
+            self, "DocsUploaderLambda",
+            function_name=f"DocsUploaderLambda-{self.env_name}",
+            code=lambda_.DockerImageCode.from_image_asset("lambda/knowledge-base"),
+            architecture=lambda_.Architecture.ARM_64,
+            timeout=Duration.minutes(15),
+            memory_size=512,
+            description="Upload markdown files from GitHub repos to S3",
+            environment={
+                "LOG_LEVEL": "INFO",
+                "BUCKET_NAME": self.documents_bucket.bucket_name
+            }
+        )
+        
+        # Grant S3 write permissions
+        self.documents_bucket.grant_write(function)
+        self.documents_bucket.grant_read(function)
+        function.node.add_dependency(self.documents_bucket)
+        return function
+
+    def _configure_docs_uploader_schedule(self) -> None:
+        """
+        Configure EventBridge schedule to run docs uploader daily.
+        """
+        rule = events.Rule(
+            self, "DocsUploaderSchedule",
+            schedule=events.Schedule.cron(hour="0", minute="0"),
+            description="Daily GitHub documentation sync to S3"
+        )
+        
+        rule.add_target(targets.LambdaFunction(
+            self.docs_uploader_lambda,
+            event=events.RuleTargetInput.from_object({
+                "repositories": self.github_repositories
+            })
+        ))
+        rule.node.add_dependency(self.docs_uploader_lambda)
 
     def _create_outputs(self) -> None:
         """Create CloudFormation outputs for the Knowledge Base resources."""
-        # S3 bucket outputs
-        CfnOutput(
-            self, "DocumentsBucketName",
-            value=self.documents_bucket.bucket_name,
-            description="Name of the S3 bucket for Knowledge Base documents"
-        )
-
-        CfnOutput(
-            self, "DocumentsBucketArn",
-            value=self.documents_bucket.bucket_arn,
-            description="ARN of the S3 bucket for Knowledge Base documents"
-        )
-
-        # OpenSearch collection outputs
-        CfnOutput(
-            self, "OpenSearchCollectionArn",
-            value=self.opensearch_collection.attr_arn,
-            description="ARN of the OpenSearch Serverless collection"
-        )
-
-        CfnOutput(
-            self, "OpenSearchCollectionEndpoint",
-            value=self.opensearch_collection.attr_collection_endpoint,
-            description="Endpoint of the OpenSearch Serverless collection"
-        )
 
         # Knowledge Base outputs
         CfnOutput(
             self, "KnowledgeBaseId",
             value=self.knowledge_base.attr_knowledge_base_id,
-            description="ID of the Bedrock Knowledge Base"
-        )
-
-        CfnOutput(
-            self, "KnowledgeBaseArn",
-            value=self.knowledge_base.attr_knowledge_base_arn,
-            description="ARN of the Bedrock Knowledge Base"
-        )
-
-        # Data source outputs
-        CfnOutput(
-            self, "DataSourceId",
-            value=self.data_source.attr_data_source_id,
-            description="ID of the Knowledge Base data source"
-        )
-
-        # Lambda function outputs
-        CfnOutput(
-            self, "DocumentSyncLambdaArn",
-            value=self.sync_lambda.function_arn,
-            description="ARN of the document synchronization Lambda function"
-        )
-
-        CfnOutput(
-            self, "DocumentSyncLambdaName",
-            value=self.sync_lambda.function_name,
-            description="Name of the document synchronization Lambda function"
+            description="ID of the Bedrock Knowledge Base",
+            export_name="OscarKnowledgeBaseId"
         )

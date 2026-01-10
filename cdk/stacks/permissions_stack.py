@@ -32,7 +32,7 @@ class OscarPermissionsStack(Stack):
     with least-privilege access and proper security boundaries.
     """
     
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, environment:str, **kwargs) -> None:
         """
         Initialize permissions stack.
         
@@ -44,11 +44,12 @@ class OscarPermissionsStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
         
         # Get account ID and region from environment
-        self.account_id = os.environ.get("CDK_DEFAULT_ACCOUNT")
-        self.aws_region = os.environ.get("CDK_DEFAULT_REGION", "us-east-1")
+        self.account_id = self.env.account
+        self.aws_region = self.env.region
+        self.env_name = environment
         
         # Initialize policy definitions
-        self.policy_definitions = OscarPolicyDefinitions(self.account_id, self.aws_region)
+        self.policy_definitions = OscarPolicyDefinitions(self.account_id, self.aws_region, self.env_name)
         
         # Create IAM roles
         self.bedrock_agent_role = self._create_bedrock_agent_role()
@@ -93,16 +94,6 @@ class OscarPermissionsStack(Stack):
         base_role = self._create_base_lambda_role()
         roles["base"] = base_role
         
-        # Use existing VPC Lambda execution role for metrics functions
-        # This role is pre-authorized for cross-account access to OpenSearch
-        load_dotenv()
-        aws_account_id = os.environ.get('AWS_ACCOUNT_ID')
-        vpc_role = iam.Role.from_role_arn(
-            self, "ExistingVpcLambdaRole",
-            role_arn=f"arn:aws:iam::{aws_account_id}:role/oscar-metrics-lambda-vpc-role"
-        )
-        roles["vpc"] = vpc_role
-        
         # Communication handler role
         communication_role = self._create_communication_handler_role()
         roles["communication"] = communication_role
@@ -110,8 +101,39 @@ class OscarPermissionsStack(Stack):
         # Jenkins agent role
         jenkins_role = self._create_jenkins_lambda_role()
         roles["jenkins"] = jenkins_role
+
+        # Metrics agent role
+        metrics_role = self._create_metrics_lambda_role()
+        roles["metrics"] = metrics_role
         
         return roles
+
+    def _create_metrics_lambda_role(self) -> iam.Role:
+        """
+        Create role for metrics related functions.
+
+        Returns:
+            The metrics Lambda execution role
+        """
+        role = iam.Role(
+            self, "MetricsLambdaRole",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSLambdaBasicExecutionRole"
+                ),
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSLambdaVPCAccessExecutionRole"
+                )
+            ],
+            description="Metrics role for OSCAR Lambda functions"
+        )
+
+        # Add least-privilege policies for base Lambda functions
+        for policy_statement in self.policy_definitions.get_metrics_lambda_policies(self.node.try_get_context("METRICS_ACCOUNT_ROLE_ARN")):
+            role.add_to_policy(policy_statement)
+
+        return role
     
     def _create_base_lambda_role(self) -> iam.Role:
         """

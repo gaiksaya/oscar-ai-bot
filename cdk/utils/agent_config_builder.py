@@ -7,17 +7,7 @@ import json
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from enum import Enum
-
-
-class FoundationModel(Enum):
-    """Supported foundation models for Bedrock agents."""
-    CLAUDE_4_5_SONNET= "anthropic.claude-sonnet-4-5-20250929-v1:0"
-    CLAUDE_4_SONNET= "anthropic.claude-sonnet-4-20250514-v1:0"
-    CLAUDE_3_5_SONNET = "anthropic.claude-3-5-sonnet-20241022-v2:0"
-    CLAUDE_3_5_HAIKU = "anthropic.claude-3-5-haiku-20241022-v1:0"
-    CLAUDE_3_SONNET = "anthropic.claude-3-sonnet-20240229-v1:0"
-    CLAUDE_3_HAIKU = "anthropic.claude-3-haiku-20240307-v1:0"
+from .foundation_models import FoundationModels
 
 
 @dataclass
@@ -272,7 +262,7 @@ class AgentConfigBuilder:
             errors.append("Foundation model is required")
         
         # Validate foundation model
-        valid_models = [model.value for model in FoundationModel]
+        valid_models = [model.value for model in FoundationModels]
         if agent_config.foundation_model not in valid_models:
             errors.append(f"Invalid foundation model. Must be one of: {valid_models}")
         
@@ -330,7 +320,7 @@ class AgentConfigBuilder:
             Template AgentConfig object
         """
         if foundation_model is None:
-            foundation_model = FoundationModel.CLAUDE_3_5_SONNET.value
+            foundation_model = FoundationModels.CLAUDE_3_5_SONNET.value
         
         return AgentConfig(
             agent_name=agent_name,

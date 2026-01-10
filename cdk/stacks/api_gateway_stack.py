@@ -18,6 +18,7 @@ from aws_cdk import (
     RemovalPolicy,
     aws_apigateway as apigateway,
     aws_logs as logs,
+    aws_iam as iam,
     CfnOutput
 )
 from constructs import Construct
@@ -36,6 +37,7 @@ class OscarApiGatewayStack(Stack):
         construct_id: str,
         lambda_stack: Any,
         permissions_stack: Any,
+        environment: str,
         **kwargs
     ) -> None:
         """
@@ -52,9 +54,9 @@ class OscarApiGatewayStack(Stack):
         
         self.lambda_stack = lambda_stack
         self.permissions_stack = permissions_stack
-        
+        self.env_name = environment
         # Get the main Lambda function and API Gateway role
-        self.lambda_function = lambda_stack.lambda_functions["main_agent"]
+        self.lambda_function = lambda_stack.lambda_functions[lambda_stack.get_main_agent_function_name(self.env_name)]
         self.api_gateway_role = permissions_stack.api_gateway_role
         
         # Create CloudWatch log group for API Gateway
@@ -68,6 +70,7 @@ class OscarApiGatewayStack(Stack):
         
         # Add outputs for important resources
         self._add_outputs()
+
     
     def _create_log_group(self) -> logs.LogGroup:
         """
@@ -78,8 +81,8 @@ class OscarApiGatewayStack(Stack):
         """
         return logs.LogGroup(
             self, "ApiGatewayLogGroup",
-            log_group_name="/aws/apigateway/oscar-slack-bot-cdk",
-            retention=logs.RetentionDays.ONE_MONTH,
+            log_group_name=f"/aws/apigateway/oscar-slack-bot-{self.env_name}",
+            retention=logs.RetentionDays.ONE_YEAR,
             removal_policy=RemovalPolicy.DESTROY
         )
     
@@ -92,12 +95,14 @@ class OscarApiGatewayStack(Stack):
         """
         api = apigateway.RestApi(
             self, "OscarSlackBotApi",
-            rest_api_name="oscar-slack-bot-api-cdk",
+            rest_api_name=f"oscar-slack-bot-api-{self.env_name}",
             description="OSCAR Slack Bot API Gateway for webhook endpoints",
-            
+            cloud_watch_role=True,
             # Keep minimal configuration
             deploy_options=apigateway.StageOptions(
-                stage_name="prod"
+                stage_name="prod",
+                access_log_destination=apigateway.LogGroupLogDestination(self.log_group),
+                access_log_format=apigateway.AccessLogFormat.clf()
             ),
             
             # CORS disabled for Slack webhook compatibility

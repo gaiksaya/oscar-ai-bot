@@ -51,7 +51,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Process S3 events
         processed_events = []
-        sync_triggered = False
+        should_sync = False
         
         for record in event.get('Records', []):
             if record.get('eventSource') == 'aws:s3':
@@ -60,17 +60,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # Check if this is a document that should trigger sync
                 if should_trigger_sync(event_info):
-                    if not sync_triggered:
-                        sync_job_id = trigger_knowledge_base_sync(knowledge_base_id, data_source_id)
-                        sync_triggered = True
-                        logger.info(f"Knowledge Base sync triggered. Job ID: {sync_job_id}")
+                    should_sync = True
+        
+        # Only trigger sync once per batch, not per file
+        sync_job_id = None
+        if should_sync:
+            sync_job_id = trigger_knowledge_base_sync(knowledge_base_id, data_source_id)
+            logger.info(f"Knowledge Base sync triggered. Job ID: {sync_job_id}")
         
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'S3 events processed successfully',
                 'processed_events': len(processed_events),
-                'sync_triggered': sync_triggered,
+                'sync_triggered': should_sync,
+                'sync_job_id': sync_job_id,
                 'events': processed_events
             })
         }
@@ -122,22 +126,8 @@ def should_trigger_sync(event_info: Dict[str, Any]) -> bool:
     Returns:
         True if sync should be triggered, False otherwise
     """
-    # Only trigger sync for document files in the docs/ prefix
     object_key = event_info.get('object_key', '')
     event_name = event_info.get('event_name', '')
-    
-    # Check if it's in the docs/ prefix
-    if not object_key.startswith('docs/'):
-        logger.info(f"Skipping sync for non-docs object: {object_key}")
-        return False
-    
-    # Check if it's a supported document type
-    supported_extensions = {'.md', '.txt', '.rst', '.json'}
-    file_extension = '.' + object_key.split('.')[-1].lower() if '.' in object_key else ''
-    
-    if file_extension not in supported_extensions:
-        logger.info(f"Skipping sync for unsupported file type: {object_key}")
-        return False
     
     # Check if it's a create or update event
     if not (event_name.startswith('ObjectCreated') or event_name.startswith('ObjectRemoved')):

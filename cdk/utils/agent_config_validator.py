@@ -11,9 +11,9 @@ from typing import Dict, Any, List, Optional, Union, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from agent_config_builder import (
-    AgentConfig, ActionGroupConfig, KnowledgeBaseConfig, 
-    CollaboratorConfig, GuardrailConfig, FoundationModel
+from .agent_config_builder import (
+    AgentConfig, ActionGroupConfig, KnowledgeBaseConfig,
+    CollaboratorConfig, GuardrailConfig, FoundationModels
 )
 
 
@@ -89,7 +89,7 @@ class AgentConfigValidator:
     KNOWLEDGE_BASE_ID_PATTERN = re.compile(r'^[A-Z0-9]{10}$')
     
     # Valid foundation models (including inference profiles)
-    VALID_FOUNDATION_MODELS = {model.value for model in FoundationModel}
+    VALID_FOUNDATION_MODELS = {model.value for model in FoundationModels}
     
     # Valid inference profile patterns
     INFERENCE_PROFILE_PATTERN = re.compile(r'^arn:aws:bedrock:[a-z0-9-]+:\d{12}:inference-profile/[a-zA-Z0-9.-]+$')
@@ -489,7 +489,7 @@ class AgentConfigValidator:
         
         # Convert to AgentConfig object and validate
         try:
-            from agent_config_builder import AgentConfigBuilder
+            from .agent_config_builder import AgentConfigBuilder
             builder = AgentConfigBuilder()
             agent_config = builder._build_agent_config(config_data)
             return self.validate_agent_config(agent_config)

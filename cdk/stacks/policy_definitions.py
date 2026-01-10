@@ -15,7 +15,10 @@ and principle of least privilege for all OSCAR components.
 import os
 from typing import Dict, List
 from aws_cdk import aws_iam as iam
-
+from .knowledge_base_stack import OscarKnowledgeBaseStack
+from .storage_stack import OscarStorageStack
+from .lambda_stack import OscarLambdaStack
+from .secrets_stack import OscarSecretsStack
 
 class OscarPolicyDefinitions:
     """
@@ -25,7 +28,7 @@ class OscarPolicyDefinitions:
     OSCAR components with resource-specific access controls.
     """
     
-    def __init__(self, account_id: str, region: str) -> None:
+    def __init__(self, account_id: str, region: str, env_name: str) -> None:
         """
         Initialize policy definitions.
         
@@ -35,7 +38,8 @@ class OscarPolicyDefinitions:
         """
         self.account_id = account_id
         self.region = region
-    
+        self.env_name = env_name
+
     def get_bedrock_agent_policies(self) -> List[iam.PolicyStatement]:
         """
         Get least-privilege policies for Bedrock agents.
@@ -50,9 +54,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-communication-handler",
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-jenkins-agent",
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-*-metrics-agent*"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:*oscar*{self.env_name}*"
                 ]
             ),
             
@@ -64,9 +66,7 @@ class OscarPolicyDefinitions:
                     "bedrock:Retrieve",
                     "bedrock:RetrieveAndGenerate"
                 ],
-                resources=[
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:knowledge-base/oscar-*"
-                ]
+                resources=["*"]
             ),
             
             # Foundation model access
@@ -75,11 +75,41 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=[
                     "bedrock:InvokeModel",
-                    "bedrock:InvokeModelWithResponseStream"
+                    "bedrock:InvokeModelWithResponseStream",
+                    "bedrock:CreateInferenceProfile",
+                    "bedrock:GetInferenceProfile",
+                    "bedrock:GetFoundationModel"
+                ],
+                resources=["*"]
+            ),
+
+            iam.PolicyStatement(
+                sid="AmazonBedrockAgentInferencProfilePolicy2",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "bedrock:GetInferenceProfile",
+                    "bedrock:ListInferenceProfiles",
+                    "bedrock:DeleteInferenceProfile",
+                    "bedrock:TagResource",
+                    "bedrock:UntagResource",
+                    "bedrock:ListTagsForResource"
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-*",
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:inference-profile/us.anthropic.claude-*"
+                    "arn:aws:bedrock:*:*:inference-profile/*",
+                    "arn:aws:bedrock:*:*:application-inference-profile/*"
+                ]
+            ),
+
+            iam.PolicyStatement(
+                sid="AmazonBedrockAgentsMultiAgentsPoliciesProd",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "bedrock:GetAgentAlias",
+                    "bedrock:InvokeAgent"
+                ],
+                resources=[
+                    "arn:aws:bedrock:*:*:agent/*",
+                    "arn:aws:bedrock:*:*:agent-alias/*"
                 ]
             )
         ]
@@ -103,13 +133,8 @@ class OscarPolicyDefinitions:
                     "dynamodb:DeleteItem"
                 ],
                 resources=[
-                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/oscar-sessions*"
-                ],
-                conditions={
-                    "ForAllValues:StringEquals": {
-                        "dynamodb:Attributes": ["event_id", "ttl", "session_data"]
-                    }
-                }
+                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/oscar-*"
+                ]
             ),
             
             iam.PolicyStatement(
@@ -119,16 +144,12 @@ class OscarPolicyDefinitions:
                     "dynamodb:GetItem",
                     "dynamodb:PutItem",
                     "dynamodb:UpdateItem",
-                    "dynamodb:Query"
+                    "dynamodb:Query",
+                    "dynamodb:Scan"
                 ],
                 resources=[
-                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/oscar-context*"
-                ],
-                conditions={
-                    "ForAllValues:StringEquals": {
-                        "dynamodb:Attributes": ["thread_key", "ttl", "context_data", "user_id"]
-                    }
-                }
+                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/{OscarStorageStack.get_dynamodb_table_name(self.env_name)}"
+                ]
             ),
             
             # Secrets Manager access for central environment
@@ -137,7 +158,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
-                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:oscar-central-env-*"
+                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:{OscarSecretsStack.get_central_env_secret_name(self.env_name)}"
                 ]
             ),
             
@@ -146,11 +167,14 @@ class OscarPolicyDefinitions:
                 sid="BedrockAgentInvocation",
                 effect=iam.Effect.ALLOW,
                 actions=[
-                    "bedrock:InvokeAgent"
+                    "bedrock:InvokeAgent",
+                    "bedrock-agent-runtime:InvokeAgent",
+                    "bedrock:GetAgent",
+                    "bedrock:GetKnowledgeBase",
+                    "bedrock:Retrieve",
+                    "bedrock:RetrieveAndGenerate"
                 ],
-                resources=[
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent/oscar-*"
-                ]
+                resources=["*"]
             ),
             
             # Bedrock model access for direct invocation
@@ -161,8 +185,8 @@ class OscarPolicyDefinitions:
                     "bedrock:InvokeModel"
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-3-haiku-*",
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-3-sonnet-*"
+                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:inference-profile/*"
                 ]
             ),
             
@@ -172,56 +196,59 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-supervisor-agent-cdk",
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-communication-handler-cdk"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar*{self.env_name}*"
+                ]
+            ),
+            
+            # SSM Parameter Store access for agent configuration
+            iam.PolicyStatement(
+                sid="SSMParameterAccess",
+                effect=iam.Effect.ALLOW,
+                actions=["ssm:GetParameter"],
+                resources=[
+                    f"arn:aws:ssm:{self.region}:{self.account_id}:parameter/oscar/{self.env_name}/bedrock/*"
                 ]
             )
         ]
     
-    def get_vpc_lambda_policies(self) -> List[iam.PolicyStatement]:
+    def get_metrics_lambda_policies(self, metrics_account_role: str = None) -> List[iam.PolicyStatement]:
         """
-        Get policies for VPC Lambda functions (metrics agents).
-        
+        Get policies for Metrics Lambda functions.
+
         Returns:
             List of IAM policy statements for VPC Lambda functions
         """
-        return [
-            # Cross-account OpenSearch access
+        policies = [
             iam.PolicyStatement(
-                sid="CrossAccountOpenSearchAssumeRole",
-                effect=iam.Effect.ALLOW,
-                actions=["sts:AssumeRole"],
-                resources=[os.environ.get("METRICS_CROSS_ACCOUNT_ROLE_ARN")],
-                conditions={
-                    "StringEquals": {
-                        "sts:ExternalId": "oscar-metrics-access"
-                    }
-                }
-            ),
-            
-            # Secrets Manager access for environment and credentials
+            sid="MetricsSecretsAccess",
+            effect=iam.Effect.ALLOW,
+            actions=["secretsmanager:GetSecretValue"],
+            resources=[
+                f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:{OscarSecretsStack.get_central_env_secret_name(self.env_name)}"
+            ]),
             iam.PolicyStatement(
-                sid="MetricsSecretsAccess",
-                effect=iam.Effect.ALLOW,
-                actions=["secretsmanager:GetSecretValue"],
-                resources=[
-                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:oscar-central-env-*"
-                ]
-            ),
-            
-            # VPC endpoint access for S3 and DynamoDB
-            iam.PolicyStatement(
-                sid="VPCEndpointAccess",
-                effect=iam.Effect.ALLOW,
-                actions=[
-                    "s3:GetObject",
-                    "s3:PutObject"
-                ],
-                resources=[
-                    f"arn:aws:s3:::oscar-metrics-cache-{self.account_id}/*"
-                ]
-            )
-        ]
+            sid="VPCEndpointAccess",
+            effect=iam.Effect.ALLOW,
+            actions=[
+                "s3:GetObject",
+                "s3:PutObject"
+            ],
+            resources=[
+                f"arn:aws:s3:::oscar-metrics-cache-{self.account_id}/*"
+            ]
+        )]
+
+        # VPC endpoint access for S3 and DynamoDB
+        if metrics_account_role:
+            policies.append(
+                # Cross-account OpenSearch access
+                iam.PolicyStatement(
+                    sid="CrossAccountOpenSearchAssumeRole",
+                    effect=iam.Effect.ALLOW,
+                    actions=["sts:AssumeRole"],
+                    resources=[metrics_account_role]
+                ))
+        return policies
     
     def get_communication_handler_policies(self) -> List[iam.PolicyStatement]:
         """
@@ -243,7 +270,7 @@ class OscarPolicyDefinitions:
                 ],
                 resources=[
                     f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/oscar-sessions*",
-                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/oscar-context*"
+                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/{OscarStorageStack.get_dynamodb_table_name(self.env_name)}"
                 ]
             ),
             
@@ -253,7 +280,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
-                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:oscar-central-env-*"
+                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:{OscarSecretsStack.get_central_env_secret_name(self.env_name)}"
                 ]
             ),
             
@@ -263,7 +290,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-supervisor-agent"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:{OscarLambdaStack.get_main_agent_function_name(self.env_name)}"
                 ]
             )
         ]
@@ -282,7 +309,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
-                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:oscar-central-env-*"
+                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:{OscarSecretsStack.get_central_env_secret_name(self.env_name)}"
                 ]
             ),
             
@@ -300,7 +327,7 @@ class OscarPolicyDefinitions:
                 ]
             )
         ]
-    
+
     def get_api_gateway_policies(self) -> List[iam.PolicyStatement]:
         """
         Get policies for API Gateway.
@@ -315,8 +342,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-supervisor-agent",
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-communication-handler"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:*oscar*{self.env_name}*"
                 ]
             ),
             
@@ -354,7 +380,7 @@ class OscarPolicyDefinitions:
                         "secretsmanager:DescribeSecret"
                     ],
                     resources=[
-                        f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:oscar-central-env-*"
+                        f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:{OscarSecretsStack.get_central_env_secret_name(self.env_name)}"
                     ]
                 )
             ],
@@ -402,7 +428,7 @@ class OscarPolicyDefinitions:
                         "dynamodb:Query"
                     ],
                     resources=[
-                        f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/oscar-context*"
+                        f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/{OscarStorageStack.get_dynamodb_table_name(self.env_name)}"
                     ],
                     conditions={
                         "ForAllValues:StringEquals": {
@@ -431,7 +457,7 @@ class OscarPolicyDefinitions:
                     "bedrock:GetAgentAlias"
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent/oscar-*",
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent/oscar-*-{self.env_name}",
                     f"arn:aws:bedrock:{self.region}:{self.account_id}:agent-alias/oscar-*"
                 ]
             ),
@@ -445,7 +471,7 @@ class OscarPolicyDefinitions:
                     "bedrock:ListKnowledgeBases"
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:knowledge-base/oscar-*"
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:knowledge-base/{OscarKnowledgeBaseStack.get_knowledge_base_name(self.env_name)}"
                 ]
             ),
             
@@ -458,10 +484,8 @@ class OscarPolicyDefinitions:
                     "bedrock:InvokeModelWithResponseStream"
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0",
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:inference-profile/us.anthropic.claude-*"
+                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:inference-profile/*"
                 ]
             )
         ]

@@ -49,7 +49,7 @@ class OscarVpcStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
         
         # Import existing VPC configuration
-        self.vpc = self._import_existing_vpc()
+        self.vpc = self._configure_vpc()
         
         # Import or create security groups
         self.lambda_security_group = self._create_lambda_security_group()
@@ -66,7 +66,7 @@ class OscarVpcStack(Stack):
         # Add tags to all resources
         self._add_tags()
     
-    def _import_existing_vpc(self) -> ec2.IVpc:
+    def _configure_vpc(self) -> ec2.IVpc:
         """
         Import the existing VPC configuration.
         
@@ -74,7 +74,7 @@ class OscarVpcStack(Stack):
             The imported VPC
         """
         # Use the VPC ID from .env file
-        vpc_id = os.environ.get("VPC_ID")
+        vpc_id = self.node.try_get_context("VPC_ID")
         
         if not vpc_id:
             try:
@@ -120,7 +120,7 @@ class OscarVpcStack(Stack):
             The Lambda security group
         """
         # Try to import existing security group first
-        existing_sg_id = os.environ.get("LAMBDA_SECURITY_GROUP_ID")
+        existing_sg_id = self.node.try_get_context("LAMBDA_SECURITY_GROUP_ID")
         
         if existing_sg_id:
             try:
@@ -138,7 +138,6 @@ class OscarVpcStack(Stack):
             self, "OscarLambdaSecurityGroup",
             vpc=self.vpc,
             description="Security group for OSCAR Lambda functions with OpenSearch access",
-            security_group_name="oscar-lambda-sg",
             allow_all_outbound=False  # We'll configure specific outbound rules
         )
         
@@ -499,7 +498,6 @@ class OscarVpcStack(Stack):
         """
         Tags.of(self).add("Project", "OSCAR")
         Tags.of(self).add("Component", "VPC")
-        Tags.of(self).add("Environment", os.environ.get("ENVIRONMENT", "dev"))
         Tags.of(self).add("ManagedBy", "CDK")
     
     # @property

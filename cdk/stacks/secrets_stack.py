@@ -26,17 +26,23 @@ class OscarSecretsStack(Stack):
     All OSCAR components read their configuration from this single secret,
     including Slack tokens, Bedrock agent IDs, and Jenkins credentials.
     """
+
+    CENTRAL_ENV_SECRET_NAME = "oscar-central-env"
+    METRICS_ACCOUNT_ROLE_SECRET_NAME = "metrics-account-role"
+
+    @classmethod
+    def get_central_env_secret_name(cls, environment: str) -> str:
+        return f"{cls.CENTRAL_ENV_SECRET_NAME}-{environment}"
     
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, environment: str,**kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
         
-        environment = os.environ.get("ENVIRONMENT", "dev")
         removal_policy = RemovalPolicy.RETAIN if environment == "prod" else RemovalPolicy.DESTROY
         
         # Create central environment secret
         self.central_env_secret = secretsmanager.Secret(
             self, "CentralEnvSecret",
-            secret_name=f"oscar-central-env-{environment}-cdk",
+            secret_name=self.get_central_env_secret_name(environment),
             description="Central environment variables for OSCAR (includes all tokens and config)",
             removal_policy=removal_policy,
             generate_secret_string=secretsmanager.SecretStringGenerator(
@@ -45,7 +51,7 @@ class OscarSecretsStack(Stack):
                 password_length=32
             )
         )
-        
+
         # Output for other stacks
         CfnOutput(
             self, "CentralEnvSecretArn",

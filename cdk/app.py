@@ -53,7 +53,7 @@ def main() -> None:
     # Get account and region from environment variables
     account: Optional[str] = os.environ.get("CDK_DEFAULT_ACCOUNT")
     region: Optional[str] = os.environ.get("CDK_DEFAULT_REGION", "us-east-1")
-    environment: str = os.environ.get("ENVIRONMENT", "dev")
+    environment = app.node.try_get_context('ENVIRONMENT') or 'dev'
 
     if not account:
         raise ValueError("CDK_DEFAULT_ACCOUNT environment variable must be set")
@@ -69,86 +69,99 @@ def main() -> None:
     permissions_stack = OscarPermissionsStack(
         app, f"OscarPermissionsStack-{environment}",
         env=env,
-        description="OSCAR IAM permissions and roles"
+        description="OSCAR IAM permissions and roles",
+        environment=environment
     )
     
     # 2. Secrets (AWS Secrets Manager)
     secrets_stack = OscarSecretsStack(
         app, f"OscarSecretsStack-{environment}",
         env=env,
-        description="OSCAR secrets management"
+        description="OSCAR secrets management",
+        environment=environment
     )
     
     # 3. Storage (DynamoDB tables)
     storage_stack = OscarStorageStack(
         app, f"OscarStorageStack-{environment}",
         env=env,
-        description="OSCAR DynamoDB storage"
+        description="OSCAR DynamoDB storage",
+        environment=environment
     )
     
-    # 4. VPC (if needed for Lambda functions)
-    # vpc_stack = None
-    # if os.environ.get("VPC_ID") or os.environ.get("USE_VPC", "false").lower() == "true":
+    # 4. VPC
     vpc_stack = OscarVpcStack(
             app, f"OscarVpcStack-{environment}",
             env=env,
             description="OSCAR VPC configuration"
         )
 
-    # 5. Knowledge Base (temporarily disabled - will add back later)
+    # 5. Knowledge Base
     knowledge_base_stack = OscarKnowledgeBaseStack(
         app, f"OscarKnowledgeBaseStack-{environment}",
         env=env,
-        description="OSCAR Bedrock Knowledge Base"
+        description="OSCAR Bedrock Knowledge Base",
+        environment=environment,
+        github_repositories=[
+        "opensearch-project/opensearch-build",
+        "opensearch-project/opensearch-build-libraries"
+        ]
     )
     
-    # 6. Lambda Functions (before API Gateway)
-    # lambda_stack = OscarLambdaStack(
-    #     app, f"OscarLambdaStack-{environment}",
-    #     permissions_stack=permissions_stack,
-    #     secrets_stack=secrets_stack,
-    #     vpc_stack=vpc_stack,
-    #     env=env,
-    #     description="OSCAR Lambda functions"
-    # )
-    #
-    # # 7. API Gateway (after Lambda functions)
-    # api_gateway_stack = OscarApiGatewayStack(
-    #     app, "OscarApiGatewayStack",
-    #     lambda_stack=lambda_stack,
-    #     permissions_stack=permissions_stack,
-    #     env=env,
-    #     description="OSCAR API Gateway"
-    # )
-    #
-    # # 8. Bedrock Agents (will be deployed manually after CDK stacks)
-    # agents_stack = OscarAgentsStack(
-    #     app, "OscarAgentsStack",
-    #     permissions_stack=permissions_stack,
-    #     knowledge_base_stack=knowledge_base_stack,
-    #     lambda_stack=lambda_stack,
-    #     env=env,
-    #     description="OSCAR Bedrock agents"
-    # )
-    # # agents_stack = None
-    #
-    # # Add tags to all stacks
-    # stacks_to_tag = [permissions_stack, secrets_stack, storage_stack, api_gateway_stack,
-    #                  lambda_stack]
-    # if knowledge_base_stack:
-    #     stacks_to_tag.append(knowledge_base_stack)
-    # if agents_stack:
-    #     stacks_to_tag.append(agents_stack)
-    #
-    # for stack in stacks_to_tag:
-    #     Tags.of(stack).add("Project", "OSCAR")
-    #     Tags.of(stack).add("Environment", environment)
-    #     Tags.of(stack).add("ManagedBy", "CDK")
-    #
-    # if vpc_stack:
-    #     Tags.of(vpc_stack).add("Project", "OSCAR")
-    #     Tags.of(vpc_stack).add("Environment", environment)
-    #     Tags.of(vpc_stack).add("ManagedBy", "CDK")
+    # 6. Lambda Functions
+    lambda_stack = OscarLambdaStack(
+        app, f"OscarLambdaStack-{environment}",
+        permissions_stack=permissions_stack,
+        secrets_stack=secrets_stack,
+        vpc_stack=vpc_stack,
+        storage_stack=storage_stack,
+        env=env,
+        environment=environment,
+        description="OSCAR Lambda functions"
+    )
+    lambda_stack.add_dependency(permissions_stack)
+    lambda_stack.add_dependency(secrets_stack)
+    lambda_stack.add_dependency(vpc_stack)
+    lambda_stack.add_dependency(storage_stack)
+
+    # 7. API Gateway
+    api_gateway_stack = OscarApiGatewayStack(
+        app, f"OscarApiGatewayStack-{environment}",
+        lambda_stack=lambda_stack,
+        permissions_stack=permissions_stack,
+        env=env,
+        description="OSCAR API Gateway",
+        environment=environment
+    )
+    api_gateway_stack.add_dependency(permissions_stack)
+    api_gateway_stack.add_dependency(lambda_stack)
+
+    # 8. Bedrock Agents (will be deployed manually after CDK stacks)
+    agents_stack = OscarAgentsStack(
+        app, f"OscarAgentsStack-{environment}",
+        permissions_stack=permissions_stack,
+        lambda_stack=lambda_stack,
+        env=env,
+        environment=environment,
+        description="OSCAR Bedrock agents"
+    )
+    agents_stack.add_dependency(permissions_stack)
+    agents_stack.add_dependency(knowledge_base_stack)
+    agents_stack.add_dependency(lambda_stack)
+
+    # Add tags to all stacks
+    stacks_to_tag = [permissions_stack, secrets_stack, storage_stack, api_gateway_stack,
+                     lambda_stack]
+
+    for stack in stacks_to_tag:
+        Tags.of(stack).add("Project", "OSCAR")
+        Tags.of(stack).add("Environment", environment)
+        Tags.of(stack).add("ManagedBy", "CDK")
+
+    if vpc_stack:
+        Tags.of(vpc_stack).add("Project", "OSCAR")
+        Tags.of(vpc_stack).add("Environment", environment)
+        Tags.of(vpc_stack).add("ManagedBy", "CDK")
     
     # Synthesize the CloudFormation templates
     app.synth()

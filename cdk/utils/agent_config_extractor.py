@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from botocore.exceptions import ClientError, BotoCoreError
-from agent_config_builder import AgentConfig, ActionGroupConfig, KnowledgeBaseConfig, CollaboratorConfig, GuardrailConfig
+from .agent_config_builder import AgentConfig, ActionGroupConfig, KnowledgeBaseConfig, CollaboratorConfig, GuardrailConfig
 
 
 # Configure logging

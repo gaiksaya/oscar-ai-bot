@@ -33,8 +33,14 @@ class OscarStorageStack(Stack):
     OSCAR Slack Bot for storing session data and conversation context.
     Includes production-ready configurations with monitoring and alerting.
     """
+
+    CONTEXT_TABLE_NAME = "oscar-agent-context"
+
+    @classmethod
+    def get_dynamodb_table_name(cls, environment: str) -> str:
+        return f"{cls.CONTEXT_TABLE_NAME}-{environment}"
     
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, environment: str, **kwargs) -> None:
         """
         Initialize storage resources.
         
@@ -44,12 +50,8 @@ class OscarStorageStack(Stack):
             **kwargs: Additional keyword arguments
         """
         super().__init__(scope, construct_id, **kwargs)
-        
-        # Get configuration from environment variables (.env file) with CDK suffix
-        environment = os.environ.get("ENVIRONMENT", "dev")
-        # Use base name to avoid suffix duplication
-        base_table_name = "oscar-agent-context"
-        context_table_name: str = f"{base_table_name}-{environment}-cdk"
+
+        self.context_table_name: str = self.get_dynamodb_table_name(environment)
         
         # Get TTL values from environment
         context_ttl: int = int(os.environ.get("CONTEXT_TTL", "604800"))  # 7 days default
@@ -61,13 +63,13 @@ class OscarStorageStack(Stack):
         
         # Create only the context table (the only one actually used by the application)
         self.context_table = self._create_context_table(
-            context_table_name, 
+            self.context_table_name,
             removal_policy,
             context_ttl
         )
         
         # Create monitoring and alerting for context table only
-        self._create_context_monitoring()
+        self._create_context_monitoring(environment)
         
         # Outputs
         CfnOutput(
@@ -122,7 +124,7 @@ class OscarStorageStack(Stack):
     
 
 
-    def _create_context_monitoring(self) -> None:
+    def _create_context_monitoring(self, environment: str) -> None:
         """
         Create CloudWatch monitoring and alerting for the context table only.
         
@@ -132,7 +134,7 @@ class OscarStorageStack(Stack):
         # Create SNS topic for alerts (optional - can be configured later)
         alert_topic = sns.Topic(
             self, "OscarStorageAlerts",
-            topic_name="oscar-storage-alerts-cdk",
+            topic_name=f"oscar-storage-alerts-{environment}",
             display_name="OSCAR Storage Monitoring Alerts"
         )
 
@@ -141,7 +143,8 @@ class OscarStorageStack(Stack):
         self._create_table_alarms(
             table=self.context_table,
             table_type="Context", 
-            alert_topic=alert_topic
+            alert_topic=alert_topic,
+            environment=environment
         )
         
         # Output SNS topic ARN for external configuration
@@ -155,7 +158,8 @@ class OscarStorageStack(Stack):
         self, 
         table: dynamodb.Table, 
         table_type: str,
-        alert_topic: sns.Topic
+        alert_topic: sns.Topic,
+        environment: str
     ) -> None:
         """
         Create CloudWatch alarms for a DynamoDB table.
@@ -168,7 +172,7 @@ class OscarStorageStack(Stack):
         # High read throttle alarm
         read_throttle_alarm = cloudwatch.Alarm(
             self, f"Oscar{table_type}ReadThrottleAlarm",
-            alarm_name=f"oscar-{table_type.lower()}-read-throttles-cdk",
+            alarm_name=f"oscar-{table_type.lower()}-read-throttles-{environment}",
             alarm_description=f"High read throttles on {table_type} table",
             metric=table.metric_throttled_requests_for_operation(
                 operation="GetItem",
@@ -185,7 +189,7 @@ class OscarStorageStack(Stack):
         # High write throttle alarm
         write_throttle_alarm = cloudwatch.Alarm(
             self, f"Oscar{table_type}WriteThrottleAlarm",
-            alarm_name=f"oscar-{table_type.lower()}-write-throttles-cdk",
+            alarm_name=f"oscar-{table_type.lower()}-write-throttles-{environment}",
             alarm_description=f"High write throttles on {table_type} table",
             metric=table.metric_throttled_requests_for_operation(
                 operation="PutItem",
@@ -202,7 +206,7 @@ class OscarStorageStack(Stack):
         # High error rate alarm - using user errors metric instead
         error_alarm = cloudwatch.Alarm(
             self, f"Oscar{table_type}ErrorAlarm",
-            alarm_name=f"oscar-{table_type.lower()}-errors-cdk",
+            alarm_name=f"oscar-{table_type.lower()}-errors-{environment}",
             alarm_description=f"High error rate on {table_type} table",
             metric=table.metric_user_errors(
                 statistic=cloudwatch.Stats.SUM
@@ -218,7 +222,7 @@ class OscarStorageStack(Stack):
         # High consumed read capacity alarm (for monitoring usage patterns)
         read_capacity_alarm = cloudwatch.Alarm(
             self, f"Oscar{table_type}ReadCapacityAlarm",
-            alarm_name=f"oscar-{table_type.lower()}-high-read-usage-cdk",
+            alarm_name=f"oscar-{table_type.lower()}-high-read-usage-{environment}",
             alarm_description=f"High read capacity usage on {table_type} table",
             metric=table.metric_consumed_read_capacity_units(
                 statistic=cloudwatch.Stats.SUM,
@@ -235,7 +239,7 @@ class OscarStorageStack(Stack):
         # High consumed write capacity alarm
         write_capacity_alarm = cloudwatch.Alarm(
             self, f"Oscar{table_type}WriteCapacityAlarm",
-            alarm_name=f"oscar-{table_type.lower()}-high-write-usage-cdk",
+            alarm_name=f"oscar-{table_type.lower()}-high-write-usage-{environment}",
             alarm_description=f"High write capacity usage on {table_type} table",
             metric=table.metric_consumed_write_capacity_units(
                 statistic=cloudwatch.Stats.SUM,
