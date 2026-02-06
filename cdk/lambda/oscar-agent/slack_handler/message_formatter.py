@@ -52,6 +52,15 @@ class MessageFormatter:
             # Start with the original message
             formatted = message
             
+            # Step 0: Strip XML tags from agent responses (<answer>, <answer_part>, <text>, <sources>)
+            formatted = re.sub(r'<answer>\s*', '', formatted)
+            formatted = re.sub(r'\s*</answer>', '', formatted)
+            formatted = re.sub(r'<answer_part>\s*', '', formatted)
+            formatted = re.sub(r'\s*</answer_part>', '', formatted)
+            formatted = re.sub(r'<text>\s*', '', formatted)
+            formatted = re.sub(r'\s*</text>', '', formatted)
+            formatted = re.sub(r'<sources>.*?</sources>', '', formatted, flags=re.DOTALL)
+            
             # Step 1: Convert bold text (**text**) to Slack format (*text*) FIRST
             # This must be done before italic conversion to avoid conflicts
             # Handle both **text** and __text__ patterns

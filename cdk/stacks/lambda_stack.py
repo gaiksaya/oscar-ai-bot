@@ -12,25 +12,19 @@ This module defines all Lambda functions used by OSCAR including:
 """
 
 import logging
-import os
 from typing import Dict, Any, Optional
 from aws_cdk import (
     Stack,
     Duration,
     aws_lambda,
     aws_iam as iam,
-    aws_ec2 as ec2,
     CfnOutput
 )
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from constructs import Construct
-import sys
 import os
 
 from .bedrock_agent_details import get_ssm_param_paths
-
-# sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
-# from lambda_assets import get_lambda_asset_path, prepare_lambda_assets
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -46,31 +40,31 @@ class OscarLambdaStack(Stack):
     - Multiple metrics agents for different data sources (test, build, release, deployment)
     """
 
-    MAIN_AGENT_LAMBDA_FUNCTION_NAME = 'oscar-supervisor-agent'
-    COMMUNICATION_HANDLER_FUNCTION_NAME = 'oscar-communication-handler'
-    JENKINS_OPERATIONS_FUNCTION_NAME = 'oscar-jenkins-operations'
-    METRICS_AGENT_FUNCTION_NAME = 'oscar-metrics-agent'
+    SUPERVISOR_AGENT_LAMBDA_FUNCTION_NAME = 'oscar-supervisor-agent'
+    COMMUNICATION_HANDLER_LAMBDA_FUNCTION_NAME = 'oscar-communication-handler'
+    JENKINS_AGENT_LAMBDA_FUNCTION_NAME = 'oscar-jenkins-operations'
+    METRICS_AGENT_LAMBDA_FUNCTION_NAME = 'oscar-metrics-agent'
 
 
     @classmethod
-    def get_main_agent_function_name(cls, env: str) -> str:
+    def get_supervisor_agent_function_name(cls, env: str) -> str:
         """Get the main agent Lambda function name"""
-        return f"{cls.MAIN_AGENT_LAMBDA_FUNCTION_NAME}-{env}"
+        return f"{cls.SUPERVISOR_AGENT_LAMBDA_FUNCTION_NAME}-{env}"
 
     @classmethod
-    def get_communication_handler_function_name(cls, env: str) -> str:
+    def get_communication_handler_lambda_function_name(cls, env: str) -> str:
         """Get the communication handler Lambda function name"""
-        return f"{cls.COMMUNICATION_HANDLER_FUNCTION_NAME}-{env}"
+        return f"{cls.COMMUNICATION_HANDLER_LAMBDA_FUNCTION_NAME}-{env}"
 
     @classmethod
-    def get_jenkins_operations_function_name(cls, env: str) -> str:
+    def get_jenkins_agent_lambda_function_name(cls, env: str) -> str:
         """Get the jenkins Lambda function name"""
-        return f"{cls.JENKINS_OPERATIONS_FUNCTION_NAME}-{env}"
+        return f"{cls.JENKINS_AGENT_LAMBDA_FUNCTION_NAME}-{env}"
 
     @classmethod
-    def get_metrics_agent_function_name(cls, env: str) -> str:
+    def get_metrics_agent_lambda_function_name(cls, env: str) -> str:
         """Get the metrics Lambda function name"""
-        return f"{cls.METRICS_AGENT_FUNCTION_NAME}-{env}"
+        return f"{cls.METRICS_AGENT_LAMBDA_FUNCTION_NAME}-{env}"
 
     def __init__(
         self, 
@@ -107,15 +101,15 @@ class OscarLambdaStack(Stack):
         self.lambda_functions: Dict[str, PythonFunction] = {}
         
         # Create all Lambda functions
-        self._create_main_oscar_agent()
-        self._create_communication_handler()
-        self._create_jenkins_operation_function()
-        self._create_metrics_agents()
+        self._create_supervisor_agent_lambda()
+        self._create_communication_handler_lambda()
+        self._create_jenkins_agent_lambda()
+        self._create_metrics_agent_lambda()
         
         # Add outputs for important resources
         self._add_outputs()
     
-    def _create_main_oscar_agent(self) -> None:
+    def _create_supervisor_agent_lambda(self) -> None:
         """
         Create the main OSCAR agent Lambda function with Slack event processing capabilities.
         """
@@ -126,8 +120,8 @@ class OscarLambdaStack(Stack):
         self.secrets_stack.grant_read_access(execution_role)
         
         function = PythonFunction(
-            self, "MainOscarAgent",
-            function_name=self.get_main_agent_function_name(self.env_name),
+            self, "MainOscarAgentLambda",
+            function_name=self.get_supervisor_agent_function_name(self.env_name),
             runtime=aws_lambda.Runtime.PYTHON_3_12,
             handler="lambda_handler",
             entry="lambda/oscar-agent",
@@ -139,10 +133,23 @@ class OscarLambdaStack(Stack):
             description="Main OSCAR agent with Slack event processing capabilities",
             reserved_concurrent_executions=10  # Limit concurrent executions
         )
-        
-        self.lambda_functions[self.get_main_agent_function_name(self.env_name)] = function
+        # Grant Bedrock permission to invoke this Lambda
+        function.add_permission(
+            "AllowBedrockInvoke",
+            principal=iam.ServicePrincipal("bedrock.amazonaws.com"),
+            action="lambda:InvokeFunction",
+            source_account=self.account
+        )
 
-    def _create_communication_handler(self) -> None:
+        function.add_permission(
+            "SelfInvoke",
+            principal=iam.ServicePrincipal("lambda.amazonaws.com"),
+            action="lambda:InvokeFunction",
+            source_arn=function.function_arn
+        )
+        self.lambda_functions[self.get_supervisor_agent_function_name(self.env_name)] = function
+
+    def _create_communication_handler_lambda(self) -> None:
         """
         Create the communication handler Lambda function for Bedrock action groups.
         """
@@ -153,10 +160,10 @@ class OscarLambdaStack(Stack):
         self.secrets_stack.grant_read_access(execution_role)
         
         function = PythonFunction(
-            self, "CommunicationHandler",
-            function_name=self.get_communication_handler_function_name(self.env_name),
+            self, "CommunicationHandlerLambda",
+            function_name=self.get_communication_handler_lambda_function_name(self.env_name),
             runtime=aws_lambda.Runtime.PYTHON_3_12,
-            handler="lambda_function.lambda_handler",
+            handler="lambda_handler",
             entry="lambda/oscar-communication-handler",
             index="lambda_function.py",
             timeout=Duration.seconds(60),
@@ -167,9 +174,17 @@ class OscarLambdaStack(Stack):
             reserved_concurrent_executions=20  # Higher concurrency for action groups
         )
         
-        self.lambda_functions[self.get_communication_handler_function_name(self.env_name)] = function
+        # Grant Bedrock permission to invoke this Lambda
+        function.add_permission(
+            "AllowBedrockInvoke",
+            principal=iam.ServicePrincipal("bedrock.amazonaws.com"),
+            action="lambda:InvokeFunction",
+            source_account=self.account
+        )
+        
+        self.lambda_functions[self.get_communication_handler_lambda_function_name(self.env_name)] = function
 
-    def _create_jenkins_operation_function(self) -> None:
+    def _create_jenkins_agent_lambda(self) -> None:
         """
         Create the Jenkins agent Lambda function for CI/CD integration.
         """
@@ -182,10 +197,10 @@ class OscarLambdaStack(Stack):
         self.secrets_stack.grant_read_access(execution_role)
 
         function = PythonFunction(
-            self, "JenkinsAgent",
-            function_name=self.get_jenkins_operations_function_name(self.env_name),
+            self, "JenkinsAgentLambda",
+            function_name=self.get_jenkins_agent_lambda_function_name(self.env_name),
             runtime=aws_lambda.Runtime.PYTHON_3_12,
-            handler="lambda_function.lambda_handler",
+            handler="lambda_handler",
             entry="lambda/jenkins",
             index="lambda_function.py",
             timeout=Duration.seconds(120),  # 2 minutes for Jenkins API calls
@@ -195,10 +210,18 @@ class OscarLambdaStack(Stack):
             description="Jenkins agent for OSCAR CI/CD operations",
             reserved_concurrent_executions=5  # Limited concurrency for Jenkins operations
         )
+        
+        # Grant Bedrock permission to invoke this Lambda
+        function.add_permission(
+            "AllowBedrockInvoke",
+            principal=iam.ServicePrincipal("bedrock.amazonaws.com"),
+            action="lambda:InvokeFunction",
+            source_account=self.account
+        )
 
-        self.lambda_functions[self.get_jenkins_operations_function_name(self.env_name)] = function
+        self.lambda_functions[self.get_jenkins_agent_lambda_function_name(self.env_name)] = function
 
-    def _create_metrics_agents(self) -> None:
+    def _create_metrics_agent_lambda(self) -> None:
         """
         Create all metrics agent Lambda functions with VPC configuration.
         """
@@ -213,18 +236,11 @@ class OscarLambdaStack(Stack):
         vpc = self.vpc_stack.vpc
         security_group = self.vpc_stack.lambda_security_group
 
-        # # Create separate metrics agents for each type
-        # metrics_types = [
-        #     ("build", "Build metrics analysis and reporting"),
-        #     ("test", "Test metrics analysis and reporting"),
-        #     ("release", "Release metrics analysis and reporting")
-        # ]
-
         function = PythonFunction(
-            self, "MetricsAgent",
-            function_name=self.get_metrics_agent_function_name(self.env_name),
+            self, "MetricsAgentLambda",
+            function_name=self.get_metrics_agent_lambda_function_name(self.env_name),
             runtime=aws_lambda.Runtime.PYTHON_3_12,
-            handler="lambda_function.lambda_handler",
+            handler="lambda_handler",
             entry="lambda/metrics",
             index="lambda_function.py",
             timeout=Duration.seconds(180),  # 3 minutes for metrics queries
@@ -237,8 +253,16 @@ class OscarLambdaStack(Stack):
             security_groups=[security_group],
             allow_public_subnet=True  # Allow placement in public subnets when no private subnets available
             )
+        
+        # Grant Bedrock permission to invoke this Lambda
+        function.add_permission(
+            "AllowBedrockInvoke",
+            principal=iam.ServicePrincipal("bedrock.amazonaws.com"),
+            action="lambda:InvokeFunction",
+            source_account=self.account
+        )
 
-        self.lambda_functions[self.get_metrics_agent_function_name(self.env_name)] = function
+        self.lambda_functions[self.get_metrics_agent_lambda_function_name(self.env_name)] = function
 
     def _get_main_agent_environment_variables(self) -> Dict[str, str]:
         """
@@ -252,7 +276,7 @@ class OscarLambdaStack(Stack):
         return {
             # Central secret reference - Lambda will load from Secrets Manager at runtime
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
-            
+
             # DynamoDB table name
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
 

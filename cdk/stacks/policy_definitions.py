@@ -54,7 +54,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:*oscar*{self.env_name}*"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:*oscar*{self.env_name}"
                 ]
             ),
             
@@ -196,7 +196,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar*{self.env_name}*"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar*{self.env_name}"
                 ]
             ),
             
@@ -290,7 +290,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:{OscarLambdaStack.get_main_agent_function_name(self.env_name)}"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:{OscarLambdaStack.get_supervisor_agent_function_name(self.env_name)}"
                 ]
             )
         ]
@@ -342,7 +342,7 @@ class OscarPolicyDefinitions:
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:*oscar*{self.env_name}*"
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:*oscar*{self.env_name}"
                 ]
             ),
             

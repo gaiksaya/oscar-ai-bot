@@ -30,8 +30,8 @@ from slack_bolt.adapter.aws_lambda import SlackRequestHandler
 import slack_bolt
 
 from config import config
-from bedrock import get_oscar_agent
-from slack_handler import SlackHandler
+from bedrock.main_agent import get_oscar_agent
+from slack_handler.slack_handler import SlackHandler
 from context_storage import get_storage
 
 
@@ -58,7 +58,7 @@ handler.register_handlers()
 
 # Initialize Lambda client for async processing
 lambda_client = boto3.client('lambda')
-FUNCTION_NAME = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'oscar-supervisor-agent')
+FUNCTION_NAME = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'oscar-supervisor-agent-dev')
 
 
 

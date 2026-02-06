@@ -56,7 +56,7 @@ class OscarApiGatewayStack(Stack):
         self.permissions_stack = permissions_stack
         self.env_name = environment
         # Get the main Lambda function and API Gateway role
-        self.lambda_function = lambda_stack.lambda_functions[lambda_stack.get_main_agent_function_name(self.env_name)]
+        self.lambda_function = lambda_stack.lambda_functions[lambda_stack.get_supervisor_agent_function_name(self.env_name)]
         self.api_gateway_role = permissions_stack.api_gateway_role
         
         # Create CloudWatch log group for API Gateway
