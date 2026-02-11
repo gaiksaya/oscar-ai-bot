@@ -177,15 +177,15 @@ class Config:
         self.log_history_preview_length = int(os.environ.get('LOG_HISTORY_PREVIEW_LENGTH', 50))
         self.log_max_history_entries = int(os.environ.get('LOG_MAX_HISTORY_ENTRIES', 2))
         
-        # Phase 2: Multi-agent configuration (for individual use or testing)
-        self.oscar_knowledge_agent_id = os.environ.get('OSCAR_KNOWLEDGE_AGENT_ID')
-        self.oscar_knowledge_agent_alias_id = os.environ.get('OSCAR_KNOWLEDGE_AGENT_ALIAS_ID')
-        self.oscar_metrics_agent_id = os.environ.get('OSCAR_METRICS_AGENT_ID')
-        self.oscar_metrics_agent_alias_id = os.environ.get('OSCAR_METRICS_AGENT_ALIAS_ID')
-        self.oscar_build_agent_id = os.environ.get('OSCAR_BUILD_AGENT_ID')
-        self.oscar_build_agent_alias_id = os.environ.get('OSCAR_BUILD_AGENT_ALIAS_ID')
-        self.oscar_test_agent_id = os.environ.get('OSCAR_TEST_AGENT_ID')
-        self.oscar_test_agent_alias_id = os.environ.get('OSCAR_TEST_AGENT_ALIAS_ID')
+        # # Phase 2: Multi-agent configuration (for individual use or testing)
+        # self.oscar_knowledge_agent_id = os.environ.get('OSCAR_KNOWLEDGE_AGENT_ID')
+        # self.oscar_knowledge_agent_alias_id = os.environ.get('OSCAR_KNOWLEDGE_AGENT_ALIAS_ID')
+        # self.oscar_metrics_agent_id = os.environ.get('OSCAR_METRICS_AGENT_ID')
+        # self.oscar_metrics_agent_alias_id = os.environ.get('OSCAR_METRICS_AGENT_ALIAS_ID')
+        # self.oscar_build_agent_id = os.environ.get('OSCAR_BUILD_AGENT_ID')
+        # self.oscar_build_agent_alias_id = os.environ.get('OSCAR_BUILD_AGENT_ALIAS_ID')
+        # self.oscar_test_agent_id = os.environ.get('OSCAR_TEST_AGENT_ID')
+        # self.oscar_test_agent_alias_id = os.environ.get('OSCAR_TEST_AGENT_ALIAS_ID')
 
     def _load_env_from_secrets(self) -> None:
         """Load environment variables from AWS Secrets Manager."""

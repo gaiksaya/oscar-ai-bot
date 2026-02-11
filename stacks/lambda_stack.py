@@ -155,10 +155,10 @@ class OscarLambdaStack(Stack):
         """
         # Get the communication handler execution role from permissions stack
         execution_role = self.permissions_stack.lambda_execution_roles["communication"]
-        
+
         # Grant access to central environment secret
         self.secrets_stack.grant_read_access(execution_role)
-        
+
         function = PythonFunction(
             self, "CommunicationHandlerLambda",
             function_name=self.get_communication_handler_lambda_function_name(self.env_name),
@@ -173,7 +173,7 @@ class OscarLambdaStack(Stack):
             description="Communication handler for OSCAR Bedrock action groups",
             reserved_concurrent_executions=20  # Higher concurrency for action groups
         )
-        
+
         # Grant Bedrock permission to invoke this Lambda
         function.add_permission(
             "AllowBedrockInvoke",
@@ -181,7 +181,7 @@ class OscarLambdaStack(Stack):
             action="lambda:InvokeFunction",
             source_account=self.account
         )
-        
+
         self.lambda_functions[self.get_communication_handler_lambda_function_name(self.env_name)] = function
 
     def _create_jenkins_agent_lambda(self) -> None:

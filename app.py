@@ -148,20 +148,6 @@ def main() -> None:
     agents_stack.add_dependency(permissions_stack)
     agents_stack.add_dependency(knowledge_base_stack)
     agents_stack.add_dependency(lambda_stack)
-
-    # Add tags to all stacks
-    stacks_to_tag = [permissions_stack, secrets_stack, storage_stack, api_gateway_stack,
-                     lambda_stack]
-
-    for stack in stacks_to_tag:
-        Tags.of(stack).add("Project", "OSCAR")
-        Tags.of(stack).add("Environment", environment)
-        Tags.of(stack).add("ManagedBy", "CDK")
-
-    if vpc_stack:
-        Tags.of(vpc_stack).add("Project", "OSCAR")
-        Tags.of(vpc_stack).add("Environment", environment)
-        Tags.of(vpc_stack).add("ManagedBy", "CDK")
     
     # Synthesize the CloudFormation templates
     app.synth()
