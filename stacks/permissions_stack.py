@@ -13,14 +13,13 @@ Bedrock agents, Lambda functions, API Gateway, and cross-account access.
 """
 
 import os
-from dotenv import load_dotenv
 from typing import Dict, List
-from aws_cdk import (
-    Stack,
-    aws_iam as iam,
-    CfnOutput
-)
+
+from aws_cdk import CfnOutput, Stack
+from aws_cdk import aws_iam as iam
 from constructs import Construct
+from dotenv import load_dotenv
+
 from .policy_definitions import OscarPolicyDefinitions
 
 

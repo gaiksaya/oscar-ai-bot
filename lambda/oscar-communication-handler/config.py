@@ -16,13 +16,14 @@ Classes:
     Config: Main configuration class with validation and environment variable handling
 """
 
+import json
 import logging
 import os
+from io import StringIO
 from typing import Optional, Tuple
-import json
+
 import boto3
 from dotenv import load_dotenv
-from io import StringIO
 
 logger = logging.getLogger(__name__)
 

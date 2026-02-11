@@ -16,13 +16,13 @@ Classes:
     MetricsConfig: Main configuration class with validation and environment variable handling
 """
 
-from typing import Optional
-import os
-import boto3
 import logging
-from typing import Dict, Any, Optional
-from dotenv import load_dotenv
+import os
 from io import StringIO
+from typing import Any, Dict, Optional
+
+import boto3
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 

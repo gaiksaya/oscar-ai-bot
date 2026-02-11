@@ -10,11 +10,13 @@
 Unit tests for main application handler.
 """
 
-import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append('oscar-agent')
 
 # Set environment variables before importing modules

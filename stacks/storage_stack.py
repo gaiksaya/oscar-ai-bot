@@ -13,17 +13,14 @@ This module defines the DynamoDB tables used by the OSCAR Slack Bot.
 
 import os
 from typing import Optional
-from aws_cdk import (
-    Stack,
-    RemovalPolicy,
-    Duration,
-    aws_dynamodb as dynamodb,
-    aws_cloudwatch as cloudwatch,
-    aws_cloudwatch_actions as cw_actions,
-    aws_sns as sns,
-    CfnOutput
-)
+
+from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
+from aws_cdk import aws_cloudwatch as cloudwatch
+from aws_cdk import aws_cloudwatch_actions as cw_actions
+from aws_cdk import aws_dynamodb as dynamodb
+from aws_cdk import aws_sns as sns
 from constructs import Construct
+
 
 class OscarStorageStack(Stack):
     """

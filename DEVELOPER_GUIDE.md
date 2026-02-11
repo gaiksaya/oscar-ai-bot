@@ -28,6 +28,14 @@ The CDK deploys:
 _Please note: Stacks have dependencies on each other and needs to be deployed in a specific order. Check app.py for more details_
 ## 🔨 Build Tools
 
+### Pyenv
+
+Use pyenv to manage multiple versions of Python. This can be installed with [pyenv-installer](https://github.com/pyenv/pyenv-installer) on Linux and MacOS, and [pyenv-win](https://github.com/pyenv-win/pyenv-win#installation) on Windows.
+
+```
+curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
+```
+
 ### Python 3.12
 
 Python projects in this repository use Python 3.12. See the [Python Beginners Guide](https://wiki.python.org/moin/BeginnersGuide) if you have never worked with the language.
@@ -35,8 +43,16 @@ Python projects in this repository use Python 3.12. See the [Python Beginners Gu
 $ python --version
 Python 3.12.12
 ```
+
+If you are using pyenv.
+
+```
+$ pyenv install 3.12.12
+$ pyenv global 3.12.12
+```
+
 ### Pipenv
-This project uses [pipenv](https://pipenv.pypa.io/en/latest/), which is typically installed with `pip install --user pipenv` or use what fits your local OS. Pipenv automatically creates and manages a virtualenv for your projects, as well as adds/removes packages from your `Pipfile` as you install/uninstall packages. It also generates the ever-important `Pipfile.lock`, which is used to produce deterministic builds.
+This project uses [pipenv](https://pipenv.pypa.io/en/latest/), which is typically installed with `pip install --user pipenv` or use whatever fits your local OS. Pipenv automatically creates and manages a virtualenv for your projects, as well as adds/removes packages from your `Pipfile` as you install/uninstall packages. It also generates the ever-important `Pipfile.lock`, which is used to produce deterministic builds.
 
 ```bash
 $ pipenv --version
@@ -53,10 +69,6 @@ Installing dependencies from Pipfile.lock (6657ff)...
 
 ## ⚙️ Configuration
 
-### Environment Setup
-
-The project uses AWS Secrets Manager to store configuration. Create a secret named `oscar-central-env-{env}` (e.g., `oscar-central-env-dev`) with all environment variables.
-
 ### Slack App Configuration
 - Go to https://api.slack.com/apps
 - Go to OAuth and Permissions. Get Bot OAuth Token
@@ -67,7 +79,7 @@ The project uses AWS Secrets Manager to store configuration. Create a secret nam
 - 
 ### Required Variables
 
-**Critical Configuration** (must be in Secrets Manager):
+**Critical Configuration**: Deploy `OscarSecretsStack-{env}` stack and update the central secret with required values.
 
 ```bash
 # Slack Integration

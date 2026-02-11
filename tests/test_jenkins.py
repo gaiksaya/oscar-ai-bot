@@ -6,17 +6,19 @@
 Unit tests for Jenkins integration components.
 """
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+import unittest
+from unittest.mock import MagicMock, Mock, patch
 
 # Add jenkins directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jenkins'))
 
 from jenkins_client import JenkinsClient, JenkinsCredentials
-from job_definitions import DockerScanJob, CentralReleasePromotionJob, ReleaseChores, job_registry
-from lambda_function import lambda_handler, handle_trigger_job, handle_get_job_info
+from job_definitions import (CentralReleasePromotionJob, DockerScanJob,
+                             ReleaseChores, job_registry)
+from lambda_function import (handle_get_job_info, handle_trigger_job,
+                             lambda_handler)
 
 
 class TestJenkinsCredentials(unittest.TestCase):
@@ -269,7 +271,7 @@ class TestJobParameterFormatting(unittest.TestCase):
     def test_format_parameters_as_bullets(self):
         """Test parameter formatting function."""
         from lambda_function import format_parameters_as_bullets
-        
+
         # Test with parameters
         params = {
             'PARAM1': {'description': 'Test param 1', 'required': True},

@@ -11,28 +11,25 @@ and Bedrock agents.
 
 import logging
 import os
-from dotenv import load_dotenv
 from typing import Optional
-from aws_cdk import (
-    App,
-    Environment,
-    Tags
-)
 
+from aws_cdk import App, Environment, Tags
+from dotenv import load_dotenv
 
-# Load environment variables from .env file
-# load_dotenv()
-
-
+from stacks.api_gateway_stack import OscarApiGatewayStack
+from stacks.bedrock_agents_stack import OscarAgentsStack
+from stacks.knowledge_base_stack import OscarKnowledgeBaseStack
+from stacks.lambda_stack import OscarLambdaStack
 # Import working stacks
 from stacks.permissions_stack import OscarPermissionsStack
 from stacks.secrets_stack import OscarSecretsStack
 from stacks.storage_stack import OscarStorageStack
 from stacks.vpc_stack import OscarVpcStack
-from stacks.api_gateway_stack import OscarApiGatewayStack
-from stacks.knowledge_base_stack import OscarKnowledgeBaseStack
-from stacks.lambda_stack import OscarLambdaStack
-from stacks.bedrock_agents_stack import OscarAgentsStack
+
+# Load environment variables from .env file
+# load_dotenv()
+
+
 
 # Configure logging
 logging.basicConfig(

@@ -7,6 +7,7 @@ Response builder for Communication Handler.
 """
 
 from typing import Any, Dict
+
 from config import config
 
 

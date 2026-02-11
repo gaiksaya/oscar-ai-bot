@@ -14,11 +14,14 @@ and principle of least privilege for all OSCAR components.
 
 import os
 from typing import Dict, List
+
 from aws_cdk import aws_iam as iam
+
 from .knowledge_base_stack import OscarKnowledgeBaseStack
-from .storage_stack import OscarStorageStack
 from .lambda_stack import OscarLambdaStack
 from .secrets_stack import OscarSecretsStack
+from .storage_stack import OscarStorageStack
+
 
 class OscarPolicyDefinitions:
     """

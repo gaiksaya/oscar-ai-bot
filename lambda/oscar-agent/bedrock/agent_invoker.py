@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
-
 from config import config
 
 logger = logging.getLogger(__name__)

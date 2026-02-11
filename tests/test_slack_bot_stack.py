@@ -10,9 +10,10 @@ Tests for the OscarSlackBotStack.
 """
 
 import os
+
 import pytest
 from aws_cdk import App
-from aws_cdk.assertions import Template, Match
+from aws_cdk.assertions import Match, Template
 
 from stacks.slack_bot_stack import OscarSlackBotStack
 

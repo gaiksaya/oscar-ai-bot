@@ -10,9 +10,10 @@
 Pytest configuration and shared fixtures.
 """
 
-import pytest
 import os
 from unittest.mock import Mock, patch
+
+import pytest
 
 
 @pytest.fixture

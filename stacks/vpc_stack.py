@@ -16,13 +16,10 @@ and configures networking for Lambda functions with OpenSearch access.
 import logging
 import os
 from typing import List, Optional
-from aws_cdk import (
-    Stack,
-    aws_ec2 as ec2,
-    aws_iam as iam,
-    CfnOutput,
-    Tags
-)
+
+from aws_cdk import CfnOutput, Stack, Tags
+from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_iam as iam
 from constructs import Construct
 
 logger = logging.getLogger(__name__)

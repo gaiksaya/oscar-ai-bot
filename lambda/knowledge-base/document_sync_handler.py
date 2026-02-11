@@ -16,7 +16,8 @@ Knowledge Base sync job.
 import json
 import logging
 import os
-from typing import Dict, Any
+from typing import Any, Dict
+
 import boto3
 from botocore.exceptions import ClientError
 

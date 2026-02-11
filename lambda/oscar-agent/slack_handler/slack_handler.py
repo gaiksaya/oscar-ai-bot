@@ -16,20 +16,17 @@ including message processing, reaction management, and context preservation.
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict
-from slack_bolt import App
 
-from config import config
 from bedrock.main_agent import OSCARAgentInterface
-from context_storage import StorageInterface
-
 from config import config
-from slack_handler.reaction_manager import ReactionManager
-
-from slack_handler.timeout_handler import TimeoutHandler
-from slack_handler.message_processor import MessageProcessor
+from context_storage import StorageInterface
+from slack_bolt import App
 from slack_handler.event_handlers import EventHandlers
-from slack_handler.slash_commands import SlashCommandHandlers
+from slack_handler.message_processor import MessageProcessor
+from slack_handler.reaction_manager import ReactionManager
 from slack_handler.slack_messaging import SlackMessaging
+from slack_handler.slash_commands import SlashCommandHandlers
+from slack_handler.timeout_handler import TimeoutHandler
 
 logger = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ Timeout handling for agent queries.
 """
 
 import logging
-import time
-import threading
 import queue
+import threading
+import time
 from typing import Any, Callable, Optional, Tuple
 
 from config import config

@@ -8,12 +8,12 @@ Slack client management for Communication Handler.
 
 import logging
 import os
-from config import config
 from typing import Any, Dict
 
+from config import config
+from message_formatter import MessageFormatter
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from message_formatter import MessageFormatter
 
 logger = logging.getLogger(__name__)
 

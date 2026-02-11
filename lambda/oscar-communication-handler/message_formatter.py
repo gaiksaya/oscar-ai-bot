@@ -8,8 +8,9 @@ Message formatting utilities for Communication Handler.
 
 import logging
 import re
-from config import config
 from typing import Any, Dict
+
+from config import config
 
 logger = logging.getLogger(__name__)
 

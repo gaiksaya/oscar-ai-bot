@@ -25,16 +25,13 @@ import os
 from typing import Any, Dict, Optional
 
 import boto3
+import slack_bolt
+from bedrock.main_agent import get_oscar_agent
+from config import config
+from context_storage import get_storage
 from slack_bolt import App
 from slack_bolt.adapter.aws_lambda import SlackRequestHandler
-import slack_bolt
-
-from config import config
-from bedrock.main_agent import get_oscar_agent
 from slack_handler.slack_handler import SlackHandler
-from context_storage import get_storage
-
-
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

@@ -9,13 +9,10 @@ Creates the central environment secret that contains all OSCAR configuration.
 """
 
 import os
-from aws_cdk import (
-    Stack,
-    RemovalPolicy,
-    aws_secretsmanager as secretsmanager,
-    aws_iam as iam,
-    CfnOutput
-)
+
+from aws_cdk import CfnOutput, RemovalPolicy, Stack
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_secretsmanager as secretsmanager
 from constructs import Construct
 
 

@@ -16,15 +16,15 @@ This module defines the Bedrock agents infrastructure including:
 - Action groups with proper Lambda function associations
 """
 import logging
-from typing import Dict, Any, List
-from aws_cdk import (
-    Stack,
-    aws_bedrock as bedrock,
-    aws_ssm as ssm,
-    CfnOutput, Fn
-)
+from typing import Any, Dict, List
+
+from aws_cdk import CfnOutput, Fn, Stack
+from aws_cdk import aws_bedrock as bedrock
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
+
 from utils.foundation_models import FoundationModels
+
 from .bedrock_agent_details import BedrockAgentDetails, get_ssm_param_paths
 
 # Configure logging
@@ -865,24 +865,6 @@ class OscarAgentsStack(Stack):
             Feature explanations, templates, and tutorials.
             Static information and how-to questions.
 
-            METRICS QUERIES → Specialist Collaborators
-            Integration test metrics → Test-Metrics-Specialist
-            Build metrics → Build-Metrics-Specialist
-            Release metrics → Release-Readiness-Metrics-Specialist
-
-            HYBRID QUERIES → Knowledge Base + Collaborators
-            "Based on best practices, how do our metrics compare?"
-            "What does documentation recommend for our performance issues?"
-
-            OVERALL ROUTING DECISION LOGIC
-            If a query seeks only static/documentation information → Use Knowledge Base
-            If a query seeks only dynamic/analytical data → Use Collaborators
-            If a query combines both → Use both sources and synthesize
-            If a query contains message sending keywords and intent → IMMEDIATELY respond with limitation message
-            If a query contains Jenkins job running keywords and intent → IMMEDIATELY respond with limitation message
-            If a query seems ambiguous or it is difficult to determine whether to use the Knowledge Base, then always try to use/search the knowledge base first.
-            If a query seems to want metrics data but perhaps it could also benefit from knowledge base use/data, then use the knowledge base as well, ensuring solid information retrieval.
-
             RESTRICTED FUNCTIONALITY RESPONSES:
             For communication requests (send message, notify channel, alert channel, post to channel):
             "I don't have access to communication features. This is the limited version of OSCAR. Please contact an administrator or request access to the full OSCAR agent if you need to send messages to channels."
@@ -894,12 +876,9 @@ class OscarAgentsStack(Stack):
             CRITICAL: Always respond with plain text directly to the user. NEVER use AgentCommunication__sendMessage or any tool calls in your final response.
             Use tools ONLY for retrieving information (knowledge base queries, collaborator queries), not for sending responses.
             After gathering information from tools, formulate your answer as plain text.
-            Always provide comprehensive, actionable responses for supported features.
+            Always provide comprehensive, actionable responses.
             Synthesize insights from multiple sources when relevant.
-            At the end of each response, you MUST mention your information sources. Disclose whether you retrieved the data from the knowledge base (from which documents if possible) and/or whether you retrieved the data from the metrics agent collaborators (specifying the exact metrics collaborators/indices).
-            For METRICS QUERIES, ALWAYS respond back with concise information that directly addresses the original query, delving into deeper information and details ONLY when requested by the user. Include information about any failures/problems/things to fix, but don't be too verbose. The idea is to answer the user's query efficiently, concisely, and succinctly, not repeating anything nor waxing on.
-            Clearly communicate limitations when users request restricted functionality.
-            Provide helpful alternatives when possible within your available capabilities.
+            At the end of each response, you MUST mention your information sources. Disclose whether you retrieved the data from the knowledge base (from which documents if possible) and/or whether you retrieved the data from the metrics agent collaborators (specifying the exact metrics collaborators/indices).  
             """
         )
 

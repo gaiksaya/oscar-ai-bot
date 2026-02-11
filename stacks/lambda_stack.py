@@ -12,17 +12,14 @@ This module defines all Lambda functions used by OSCAR including:
 """
 
 import logging
-from typing import Dict, Any, Optional
-from aws_cdk import (
-    Stack,
-    Duration,
-    aws_lambda,
-    aws_iam as iam,
-    CfnOutput
-)
+import os
+from typing import Any, Dict, Optional
+
+from aws_cdk import CfnOutput, Duration, Stack
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_lambda
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from constructs import Construct
-import os
 
 from .bedrock_agent_details import get_ssm_param_paths
 

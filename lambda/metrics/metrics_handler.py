@@ -19,9 +19,15 @@ Functions:
 import logging
 from typing import Any, Dict, List, Optional
 
-from data_processors import extract_test_results, extract_build_results, extract_release_results, deduplicate_integration_test_results
-from query_builders import query_integration_test_results, query_distribution_build_results, query_release_readiness
-from summary_generators import generate_integration_summary, generate_build_summary, generate_release_summary
+from data_processors import (deduplicate_integration_test_results,
+                             extract_build_results, extract_release_results,
+                             extract_test_results)
+from query_builders import (query_distribution_build_results,
+                            query_integration_test_results,
+                            query_release_readiness)
+from summary_generators import (generate_build_summary,
+                                generate_integration_summary,
+                                generate_release_summary)
 
 logger = logging.getLogger(__name__)
 

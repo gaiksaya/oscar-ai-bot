@@ -14,26 +14,22 @@ ingestion pipeline and vector embeddings using Titan.
 """
 
 import os
-from typing import Dict, List, Optional, Any
-from aws_cdk import (
-    Stack,
-    RemovalPolicy,
-    Duration,
-    CustomResource,
-    aws_s3 as s3,
-    aws_s3_notifications as s3n,
-    aws_opensearchserverless as opensearchserverless,
-    aws_bedrock as bedrock,
-    aws_iam as iam,
-    aws_lambda as lambda_,
-    aws_events as events,
-    aws_events_targets as targets,
-    aws_logs as logs,
-    CfnOutput, custom_resources,
+from typing import Any, Dict, List, Optional
 
-)
+from aws_cdk import CfnOutput, CustomResource, Duration, RemovalPolicy, Stack
+from aws_cdk import aws_bedrock as bedrock
+from aws_cdk import aws_events as events
+from aws_cdk import aws_events_targets as targets
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_logs as logs
+from aws_cdk import aws_opensearchserverless as opensearchserverless
+from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_s3_notifications as s3n
+from aws_cdk import custom_resources
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from constructs import Construct
+
 from utils.foundation_models import FoundationModels
 
 
@@ -509,7 +505,7 @@ class OscarKnowledgeBaseStack(Stack):
             The Lambda function for document sync
         """
         from aws_cdk.aws_lambda_python_alpha import PythonFunction
-        
+
         # Create execution role for the Lambda function
         sync_lambda_role = iam.Role(
             self, "DocumentSyncLambdaRole",

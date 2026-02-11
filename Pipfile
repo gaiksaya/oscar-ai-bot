@@ -16,6 +16,7 @@ certifi = ">=2023.7.22"
 python-dotenv = ">=1.0.0"
 
 [dev-packages]
+isort = "*"
 
 [requires]
 python_version = "3.12"

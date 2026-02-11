@@ -10,10 +10,12 @@
 Unit tests for Bedrock agent functionality.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append('oscar-agent')
 
 # Set environment variable before importing modules
@@ -80,9 +82,9 @@ class TestBedrockAgent:
     
     def test_session_id_generation(self):
         """Test session ID generation logic."""
-        import uuid
         import time
-        
+        import uuid
+
         # Test UUID-based session ID
         session_id = str(uuid.uuid4())
         assert len(session_id) == 36  # Standard UUID length

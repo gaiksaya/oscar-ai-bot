@@ -7,6 +7,7 @@ Message handling for Communication Handler.
 """
 
 import logging
+
 logger = logging.getLogger(__name__)
 from typing import Any, Dict
 
@@ -15,6 +16,7 @@ from context_storage import get_storage
 from message_formatter import MessageFormatter
 from response_builder import ResponseBuilder
 from slack_client import SlackClientManager
+
 
 class MessageHandler:
     """Handles message sending and formatting operations."""

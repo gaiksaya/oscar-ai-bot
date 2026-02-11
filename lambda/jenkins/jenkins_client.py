@@ -15,14 +15,14 @@ checking status, and managing Jenkins operations through the REST API.
 
 import json
 import logging
-import requests
 import time
-from requests.auth import HTTPBasicAuth
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
+import requests
 from config import config
 from job_definitions import job_registry
+from requests.auth import HTTPBasicAuth
 
 logger = logging.getLogger(__name__)
 

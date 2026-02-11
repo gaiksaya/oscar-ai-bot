@@ -10,10 +10,10 @@ and uploads them to S3, only uploading files that have changed (based on MD5 has
 
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
-import shutil
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Configure logging
 logger = logging.getLogger(__name__)

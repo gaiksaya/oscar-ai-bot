@@ -13,15 +13,13 @@ and monitoring for the OSCAR Slack Bot infrastructure.
 """
 
 from typing import Any
-from aws_cdk import (
-    Stack,
-    RemovalPolicy,
-    aws_apigateway as apigateway,
-    aws_logs as logs,
-    aws_iam as iam,
-    CfnOutput
-)
+
+from aws_cdk import CfnOutput, RemovalPolicy, Stack
+from aws_cdk import aws_apigateway as apigateway
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_logs as logs
 from constructs import Construct
+
 
 class OscarApiGatewayStack(Stack):
     """

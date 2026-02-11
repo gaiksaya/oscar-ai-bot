@@ -16,17 +16,16 @@ between Bedrock agents and the Jenkins client, handling job triggers and status 
 import json
 import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from config import config
 # Import Jenkins client components
 from jenkins_client import JenkinsClient
 from job_definitions import job_registry
-from config import config
-
 
 
 def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:

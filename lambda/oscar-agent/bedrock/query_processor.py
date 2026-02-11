@@ -12,9 +12,9 @@ query strategy for the OSCAR agent system.
 import logging
 from typing import Optional, Tuple
 
-from config import config
 from bedrock.agent_invoker import BedrockAgentCore
 from bedrock.error_handler import AgentErrorHandler
+from config import config
 
 logger = logging.getLogger(__name__)
 

@@ -13,9 +13,11 @@ proper IAM role and policy creation with least-privilege principles.
 """
 
 import os
+
 import pytest
 from aws_cdk import App, Environment
 from aws_cdk.assertions import Template
+
 from stacks.permissions_stack import OscarPermissionsStack
 
 

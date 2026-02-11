@@ -15,10 +15,10 @@ This module defines the structure and parameters for different Jenkins jobs,
 providing a modular system for adding new jobs with proper validation.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

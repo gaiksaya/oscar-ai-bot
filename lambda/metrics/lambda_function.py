@@ -19,13 +19,15 @@ Functions:
 
 import json
 import logging
+import traceback
 import uuid
 from typing import Any, Dict
-import traceback
-from helper_functions import handle_component_resolution, handle_rc_build_mapping
+
+from config import config
+from helper_functions import (handle_component_resolution,
+                              handle_rc_build_mapping)
 from metrics_handler import handle_metrics_query
 from response_builder import create_response
-from config import config
 
 logger = logging.getLogger(__name__)
 

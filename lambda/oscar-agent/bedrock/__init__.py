@@ -10,6 +10,7 @@ split into focused components for better maintainability and testing.
 """
 
 # Import main components for easy access
-from bedrock.main_agent import OSCARAgentInterface, EnhancedBedrockOSCARAgent, get_oscar_agent
+from bedrock.main_agent import (EnhancedBedrockOSCARAgent, OSCARAgentInterface,
+                                get_oscar_agent)
 
 __all__ = ['OSCARAgentInterface', 'EnhancedBedrockOSCARAgent', 'get_oscar_agent']

@@ -8,9 +8,10 @@ Slack messaging utilities for Slack Handler.
 
 import logging
 from typing import Any, Dict
-from slack_sdk.errors import SlackApiError
 
 from config import config
+from slack_sdk.errors import SlackApiError
+
 from .message_formatter import MessageFormatter
 
 logger = logging.getLogger(__name__)

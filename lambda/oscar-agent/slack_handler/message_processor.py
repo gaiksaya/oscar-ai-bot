@@ -8,11 +8,10 @@ Message processing for Slack Handler.
 
 import logging
 import re
-from config import config
 import time
 from typing import Any, Callable, Optional
 
-
+from config import config
 
 logger = logging.getLogger(__name__)
 

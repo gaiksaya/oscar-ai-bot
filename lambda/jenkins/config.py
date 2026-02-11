@@ -13,12 +13,13 @@ This module provides centralized configuration for the Jenkins integration,
 including job definitions, credentials, and environment settings.
 """
 
-import os
-import boto3
 import logging
-from typing import Dict, Any, Optional
-from dotenv import load_dotenv
+import os
 from io import StringIO
+from typing import Any, Dict, Optional
+
+import boto3
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 

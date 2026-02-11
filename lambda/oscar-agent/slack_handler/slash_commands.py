@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict
 
 from config import config
 
-
 logger = logging.getLogger(__name__)
 
 

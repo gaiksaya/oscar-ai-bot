@@ -26,7 +26,6 @@ import boto3
 import requests
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-
 from config import config
 
 logger = logging.getLogger(__name__)
