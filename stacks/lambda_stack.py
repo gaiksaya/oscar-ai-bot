@@ -185,7 +185,6 @@ class OscarLambdaStack(Stack):
         """
         Create the Jenkins agent Lambda function for CI/CD integration.
         """
-        logger.info("Creating Jenkins agent Lambda function")
 
         # Get the Jenkins execution role from permissions stack
         execution_role = self.permissions_stack.lambda_execution_roles["jenkins"]
