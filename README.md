@@ -37,10 +37,10 @@ OSCAR uses a modular, event-driven architecture:
 │   Events    │    │   Lambda     │    │    Agent        │
 └─────────────┘    └──────────────┘    └─────────────────┘
                                                 │
-                   ┌─────────────────────────────┼─────────────────────────────┐
-                   │                             │                             │
+                   ┌────────────────────────────┼────────────────────────────┐
+                   │                            │                            │
             ┌──────▼──────┐              ┌──────▼──────┐              ┌──────▼──────┐
-            │   Jenkins   │              │  Monitoring │              │   Future    │
+            │   Jenkins   │              │  Metrics    │              │   Future    │
             │  Specialist │              │  Specialist │              │ Specialists │
             └─────────────┘              └─────────────┘              └─────────────┘
 ```
@@ -48,45 +48,36 @@ OSCAR uses a modular, event-driven architecture:
 ## Project Structure
 
 ```
-OSCAR/
-├── oscar-agent/              # Core AI agent and Slack integration
-│   ├── app.py                   # Main supervisor agent
-│   ├── slack_handler/           # Slack event processing
-│   ├── communication_handler/   # Message formatting and routing
-│   └── bedrock/                # AI agent orchestration
-├── jenkins/                  # Jenkins operations integration
-│   ├── lambda_function.py       # Jenkins job execution
-│   ├── jenkins_client.py        # Jenkins API client
-│   └── job_definitions.py       # Job registry and validation
-├── metrics/                  # Analytics and monitoring
-│   ├── lambda_function.py       # Metrics collection
-│   └── storage.py              # Data persistence
-├── cdk/                      # Infrastructure as Code
-│   ├── stacks/                  # CDK stack definitions
-│   └── lambda/                  # Lambda function configurations
-├── tests/                    # Comprehensive test suite
-├── deployment_scripts/       # Infrastructure deployment
-└── lambda_update_scripts/    # Development utilities
-```
-
-## Configuration
-
-### Prerequisites
-- AWS CLI configured with appropriate permissions
-- Python 3.12+
-- Slack app with bot token and signing secret
-
-### Environment Setup
-```bash
-# Clone and configure
-git clone <repository>
-cd OSCAR
-cp .env.example .env
-# Edit .env with your AWS and Slack credentials
+oscar-ai-bot/
+├── app.py                    # CDK application entry point
+├── stacks/                   # CDK stack definitions
+│   ├── permissions_stack.py     # IAM roles and policies
+│   ├── secrets_stack.py         # Secrets Manager configuration
+│   ├── storage_stack.py         # DynamoDB tables
+│   ├── vpc_stack.py             # VPC and networking
+│   ├── knowledge_base_stack.py  # Bedrock Knowledge Base
+│   ├── lambda_stack.py          # Lambda functions
+│   ├── api_gateway_stack.py     # REST API for Slack
+│   └── bedrock_agents_stack.py  # Bedrock agents (supervisor + collaborators)
+├── lambda/                   # Lambda function source code
+│   ├── oscar-agent/             # Main Slack bot handler
+│   ├── jenkins/                 # Jenkins operations
+│   ├── metrics/                 # Metrics analysis
+│   └── knowledge-base/          # Upload and sync docs
+├── utils/                    # Shared utilities
+├── Pipfile                   # Python dependencies (pipenv)
+├── Pipfile.lock              # Locked dependency versions
+├── .env.example              # Environment variables template (135+ vars)
+├── README.md                 # Project overview and architecture
+├── DEVELOPER_GUIDE.md        # Development and deployment guide
+└── CONTRIBUTING.md           # Contribution guidelines
 ```
 
 ### Slack App Configuration
-- Set Request URL to your API Gateway endpoint
+- Go to https://api.slack.com/apps
+- Go to OAuth and Permissions. Get Bot OAuth Token
+- Next, select 'Event Subscriptions' on left panel
+- Set Request URL to your API Gateway endpoint (Example: https://api-gateway-url/prod/slack/events)
 - Subscribe to bot events (message.channels, app_mention)
 - Install app to workspace
 
@@ -120,31 +111,5 @@ cp .env.example .env
 - **Secrets Management**: AWS Secrets Manager integration
 - **Least Privilege**: Minimal IAM permissions per component
 
-## Testing
-
-```bash
-# Run comprehensive test suite
-cd tests
-./run_tests.sh
-
-# Test specific components
-python -m pytest test_slack_handler.py
-python -m pytest test_jenkins.py
-python -m pytest test_metrics.py
-```
-
-## Monitoring
-
-- **CloudWatch Logs**: Centralized logging for all components
-- **Metrics Dashboard**: Real-time performance monitoring
-- **Error Tracking**: Automated alerting for failures
-- **Usage Analytics**: User interaction patterns and trends
-
-## Contributing
-
-1. **Development**: Modify code and test locally
-2. **Testing**: Run full test suite before changes
-3. **Documentation**: Update relevant READMEs for changes
-4. **Security**: Follow principle of least privilege
-
 OSCAR transforms complex operations into simple conversations, making powerful automation accessible to every team member.
+

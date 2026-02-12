@@ -10,10 +10,12 @@
 Unit tests for storage functionality.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append('oscar-agent')
 
 # Set environment variable before importing modules
@@ -59,7 +61,7 @@ class TestStorage:
         """Test that storage interface has required methods."""
         try:
             from context_storage import StorageInterface
-            
+
             # Check that abstract methods exist
             required_methods = ['store_context', 'get_context', 'has_seen_event', 'mark_event_seen', 'get_context_for_query']
             

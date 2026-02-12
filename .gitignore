@@ -12,7 +12,7 @@ instructions.md
 instructions.txt
 agent-configs
 cdk.context.json
-
+htmlcov
 # Build outputs
 build_docs/
 cdk.out/

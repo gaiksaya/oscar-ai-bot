@@ -10,10 +10,12 @@
 Unit tests for metrics functionality.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append('metrics')
 
 
@@ -133,7 +135,7 @@ class TestMetrics:
         # Test timestamp formatting
         timestamp_str = '2023-01-01T12:00:00Z'
         from datetime import datetime
-        
+
         # Parse timestamp
         parsed_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
         assert parsed_timestamp is not None

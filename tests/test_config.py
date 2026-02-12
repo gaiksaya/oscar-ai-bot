@@ -10,11 +10,12 @@
 Unit tests for configuration management.
 """
 
-import pytest
 import os
-from unittest.mock import patch
 import sys
-import os
+from unittest.mock import patch
+
+import pytest
+
 sys.path.append('oscar-agent')
 
 # Set environment variable before importing config

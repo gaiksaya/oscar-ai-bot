@@ -10,11 +10,13 @@
 Unit tests for DynamoDB setup functionality.
 """
 
-import pytest
-import time
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+import time
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append('.')
 
 # Set environment variable before importing modules

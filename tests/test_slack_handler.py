@@ -10,10 +10,12 @@
 Unit tests for Slack handler functionality.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append('oscar-agent')
 
 # Set environment variable before importing modules
