@@ -587,7 +587,7 @@ class OscarKnowledgeBaseStack(Stack):
             self, "DocsUploaderLambda",
             function_name=f"DocsUploaderLambda-{self.env_name}",
             code=lambda_.DockerImageCode.from_image_asset("lambda/knowledge-base"),
-            architecture=lambda_.Architecture.ARM_64,
+            architecture=lambda_.Architecture.X86_64,
             timeout=Duration.minutes(15),
             memory_size=512,
             description="Upload markdown files from GitHub repos to S3",
