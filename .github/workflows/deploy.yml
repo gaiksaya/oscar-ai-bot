@@ -29,11 +29,6 @@ jobs:
           python -m pip install --upgrade pipenv==2026.0.3 wheel
           pipenv install --deploy --dev
 
-      - name: Set up Env variables
-        run: |
-          echo "BETA_ACCOUNT_ID=${{ secrets.BETA_ACCOUNT_ID }}" >> $GITHUB_ENV
-          echo "REGION=us-east-1" >> $GITHUB_ENV
-
       - id: get_approvers
         uses: actions/github-script@v7
         with:
@@ -61,7 +56,7 @@ jobs:
       - name: Create beta change-set for approval
         id: beta_stack_diff
         run: |
-          pipenv run cdk diff | sed -E 's/[0-9]{12}/[MASKED]/g' > beta_diff.txt
+          pipenv run cdk diff -c ENVIRONMENT=beta | sed -E 's/[0-9]{12}/[MASKED]/g' > beta_diff.txt
 
           DIFF_SIZE=$(wc -c < beta_diff.txt)
           if [ $DIFF_SIZE -gt 40000 ]; then
@@ -103,4 +98,4 @@ jobs:
             </details>
 
       - name: Deploy beta stacks
-        run: pipenv run cdk deploy "*" --require-approval=never
+        run: pipenv run cdk deploy "*" --require-approval=never -c ENVIRONMENT=beta
