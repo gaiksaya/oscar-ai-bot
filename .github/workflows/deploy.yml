@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -48,7 +48,7 @@ jobs:
 #            return maintainers;
 
       - name: Configure beta deployment credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.BETA_DEPLOYMENT_ROLE }}
           aws-region: 'us-east-1'
@@ -68,7 +68,7 @@ jobs:
           fi
 
       - name: Upload beta diff as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: beta-stack-diff
           path: beta_diff.txt
@@ -80,7 +80,7 @@ jobs:
 #          secret: ${{ secrets.GITHUB_TOKEN }}
 #          approvers: ${{ join(fromJSON(steps.get_approvers.outputs.result), ', ') }}
 #          minimum-approvals: 1
-#          issue-title: 'Request to approve/deny Beta CI Stack Deployment'
+#          issue-title: 'Request to approve/deny Beta OSCAR Stack Deployment'
 #          issue-body: |
 #            ## Beta Stack Deployment Request
 #
