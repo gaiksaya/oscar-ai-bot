@@ -504,7 +504,6 @@ class OscarKnowledgeBaseStack(Stack):
         Returns:
             The Lambda function for document sync
         """
-        from aws_cdk.aws_lambda_python_alpha import PythonFunction
 
         # Create execution role for the Lambda function
         sync_lambda_role = iam.Role(

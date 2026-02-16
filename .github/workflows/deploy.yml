@@ -29,11 +29,6 @@ jobs:
           python -m pip install --upgrade pipenv==2026.0.3 wheel
           pipenv install --deploy --dev
 
-      - name: Set up Env variables
-        run: |
-          echo "BETA_ACCOUNT_ID=${{ secrets.BETA_ACCOUNT_ID }}" >> $GITHUB_ENV
-          echo "REGION=us-east-1" >> $GITHUB_ENV
-
       - id: get_approvers
         uses: actions/github-script@v7
         with:
@@ -53,7 +48,7 @@ jobs:
             return maintainers;
 
       - name: Configure beta deployment credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.BETA_DEPLOYMENT_ROLE }}
           aws-region: 'us-east-1'
@@ -61,7 +56,7 @@ jobs:
       - name: Create beta change-set for approval
         id: beta_stack_diff
         run: |
-          pipenv run cdk diff | sed -E 's/[0-9]{12}/[MASKED]/g' > beta_diff.txt
+          pipenv run cdk diff -c ENVIRONMENT=dev | sed -E 's/[0-9]{12}/[MASKED]/g' > beta_diff.txt
 
           DIFF_SIZE=$(wc -c < beta_diff.txt)
           if [ $DIFF_SIZE -gt 40000 ]; then
@@ -83,9 +78,9 @@ jobs:
         uses: trstringer/manual-approval@v1
         with:
           secret: ${{ secrets.GITHUB_TOKEN }}
-          approvers: 'gaiksaya'
+          approvers: ${{ join(fromJSON(steps.get_approvers.outputs.result), ', ') }}
           minimum-approvals: 1
-          issue-title: 'Request to approve/deny Beta CI Stack Deployment'
+          issue-title: 'Request to approve/deny Beta OSCAR Stack Deployment'
           issue-body: |
             ## Beta Stack Deployment Request
 
@@ -103,5 +98,4 @@ jobs:
             </details>
 
       - name: Deploy beta stacks
-        run: |
-          pipenv run cdk deploy "*" --require-approval=never
+        run: pipenv run cdk deploy "*" --require-approval=never -c ENVIRONMENT=dev
