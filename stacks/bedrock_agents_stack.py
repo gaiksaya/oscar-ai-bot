@@ -16,11 +16,14 @@ This module defines the Bedrock agents infrastructure including:
 """
 import logging
 from typing import Any, List, Optional
+
 from aws_cdk import Fn, Stack
 from aws_cdk import aws_bedrock as bedrock
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
+
 from utils.foundation_models import FoundationModels
+
 from .bedrock_agent_details import get_ssm_param_paths
 
 logger = logging.getLogger(__name__)

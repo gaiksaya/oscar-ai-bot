@@ -15,7 +15,6 @@ import sys
 import time
 from unittest.mock import Mock, patch
 
-
 sys.path.append('.')
 
 # Set environment variable before importing modules

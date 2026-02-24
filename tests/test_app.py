@@ -14,7 +14,6 @@ import json
 import os
 import sys
 
-
 sys.path.append('oscar-agent')
 
 # Set environment variables before importing modules

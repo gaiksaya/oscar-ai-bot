@@ -9,7 +9,6 @@ Message formatting utilities for Communication Handler.
 import logging
 import re
 
-
 logger = logging.getLogger(__name__)
 
 
