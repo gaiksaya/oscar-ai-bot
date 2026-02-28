@@ -29,6 +29,9 @@ jobs:
           python -m pip install --upgrade pipenv==2026.0.3 wheel
           pipenv install --deploy --dev
 
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+
       - id: get_approvers
         uses: actions/github-script@v7
         with:
