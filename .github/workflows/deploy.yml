@@ -32,22 +32,22 @@ jobs:
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
 
-      - id: get_approvers
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          result-encoding: json
-          script: |
-            const collaborators = await github.paginate(
-              github.rest.repos.listCollaborators,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                affiliation: 'direct',
-                per_page: 100
-              }
-            );
-            const maintainers = collaborators.filter(c => c.permissions.maintain).map(c => c.login);
+      # - id: get_approvers
+      #   uses: actions/github-script@v7
+      #   with:
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     result-encoding: json
+      #     script: |
+      #       const collaborators = await github.paginate(
+      #         github.rest.repos.listCollaborators,
+      #         {
+      #           owner: context.repo.owner,
+      #           repo: context.repo.repo,
+      #           affiliation: 'direct',
+      #           per_page: 100
+      #         }
+      #       );
+      #       const maintainers = collaborators.filter(c => c.permissions.maintain).map(c => c.login);
             return maintainers;
 
       - name: Configure beta deployment credentials
@@ -77,28 +77,28 @@ jobs:
           path: beta_diff.txt
           retention-days: 30
 
-      - name: Approve or Deny beta change set
-        uses: trstringer/manual-approval@v1
-        with:
-          secret: ${{ secrets.GITHUB_TOKEN }}
-          approvers: ${{ join(fromJSON(steps.get_approvers.outputs.result), ', ') }}
-          minimum-approvals: 1
-          issue-title: 'Request to approve/deny Beta OSCAR Stack Deployment'
-          issue-body: |
-            ## Beta Stack Deployment Request
+      # - name: Approve or Deny beta change set
+      #   uses: trstringer/manual-approval@v1
+      #   with:
+      #     secret: ${{ secrets.GITHUB_TOKEN }}
+      #     approvers: ${{ join(fromJSON(steps.get_approvers.outputs.result), ', ') }}
+      #     minimum-approvals: 1
+      #     issue-title: 'Request to approve/deny Beta OSCAR Stack Deployment'
+      #     issue-body: |
+      #       ## Beta Stack Deployment Request
 
-            **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #       **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            <details>
-            <summary>Beta Stack Changeset Details</summary>
+      #       <details>
+      #       <summary>Beta Stack Changeset Details</summary>
 
-            ```
-            ${{ steps.beta_stack_diff.outputs.diff_summary }}
-            ```
+      #       ```
+      #       ${{ steps.beta_stack_diff.outputs.diff_summary }}
+      #       ```
 
-            📎 **Full diff available in workflow artifacts:** [beta-stack-diff](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+      #       📎 **Full diff available in workflow artifacts:** [beta-stack-diff](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
-            </details>
+      #       </details>
 
       - name: Deploy beta stacks
         run: pipenv run cdk deploy "*" --require-approval=never -c ENVIRONMENT=dev
