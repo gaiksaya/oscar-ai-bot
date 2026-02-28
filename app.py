@@ -11,6 +11,8 @@ and Bedrock agents.
 
 import logging
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from typing import Optional
 
 from aws_cdk import App, Environment
@@ -27,6 +29,7 @@ from stacks.permissions_stack import OscarPermissionsStack
 from stacks.secrets_stack import OscarSecretsStack
 from stacks.storage_stack import OscarStorageStack
 from stacks.vpc_stack import OscarVpcStack
+
 
 # Load environment variables from .env file
 # load_dotenv()
