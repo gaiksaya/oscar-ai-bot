@@ -48,7 +48,7 @@ jobs:
       #         }
       #       );
       #       const maintainers = collaborators.filter(c => c.permissions.maintain).map(c => c.login);
-            return maintainers;
+            # return maintainers;
 
       - name: Configure beta deployment credentials
         uses: aws-actions/configure-aws-credentials@v5
