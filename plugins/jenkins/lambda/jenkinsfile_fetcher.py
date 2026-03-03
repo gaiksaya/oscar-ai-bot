@@ -5,87 +5,41 @@
 """
 GitHub Jenkinsfile Fetcher for OSCAR.
 
-Dynamically discovers Jenkinsfiles under the jenkins/ directory of the
-opensearch-build repo, fetches them from GitHub, parses with
-JenkinsfileParser, builds a JobRegistry, and caches the result.
+Fetches Jenkinsfiles from GitHub at Lambda cold start, parses them
+with JenkinsfileParser, builds a JobRegistry, and caches the result.
 """
 
 import logging
 import os
 import time
-from typing import List, Optional
+from typing import Optional
 
 import requests
 from jenkinsfile_parser import JenkinsfileParser, ParsedJob
 from job_definitions import JobRegistry
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-GITHUB_REPO = os.environ["JENKINSFILE_GITHUB_REPO"]
-GITHUB_BRANCH = os.environ["JENKINSFILE_GITHUB_BRANCH"]
-JENKINS_DIR = "jenkins"
-FETCH_TIMEOUT = 5
-CACHE_TTL = 3600
+# Jenkinsfile paths to fetch (relative to repo root).
+JENKINSFILE_PATHS = [
+    "jenkins/docker/docker-scan.jenkinsfile",
+    "jenkins/release-workflows/release-promotion.jenkinsfile",
+    "jenkins/release-workflows/release-chores.jenkinsfile",
+]
 
-# Paths to skip: can be directories (jenkins/legacy) or files (jenkins/foo/bar.jenkinsfile).
-# Comma-separated via env var. Matches by prefix so "jenkins/legacy" skips everything under it.
-_ignore_raw = os.environ.get("JENKINSFILE_IGNORE_LIST", "")
-IGNORE_LIST: List[str] = [p.strip() for p in _ignore_raw.split(",") if p.strip()]
-
-
-def _is_ignored(path: str) -> bool:
-    """Check if a path matches any entry in the ignore list (exact or prefix)."""
-    for ignored in IGNORE_LIST:
-        if path == ignored or path.startswith(ignored.rstrip("/") + "/"):
-            return True
-    return False
-
+GITHUB_REPO = os.environ.get("JENKINSFILE_GITHUB_REPO", "gaiksaya/opensearch-build")
+GITHUB_BRANCH = os.environ.get("JENKINSFILE_GITHUB_BRANCH", "main")
+FETCH_TIMEOUT = int(os.environ.get("JENKINSFILE_FETCH_TIMEOUT", "5"))
+CACHE_TTL = int(os.environ.get("JENKINSFILE_CACHE_TTL", "3600"))
 
 # Module-level cache
 _cached_registry: Optional[JobRegistry] = None
 _cache_timestamp: float = 0.0
 
 
-def _github_api_url(path: str) -> str:
-    """Build a GitHub API URL for listing directory contents."""
-    return f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
-
-
 def _build_raw_url(path: str) -> str:
     """Build a raw.githubusercontent.com URL for a file."""
     return f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{path}"
-
-
-def _discover_jenkinsfiles(directory: str = JENKINS_DIR) -> List[str]:
-    """Recursively discover all .jenkinsfile files under the given directory using the GitHub API."""
-    paths: List[str] = []
-    dirs_to_visit = [directory]
-
-    while dirs_to_visit:
-        current_dir = dirs_to_visit.pop()
-        url = _github_api_url(current_dir)
-        try:
-            resp = requests.get(url, timeout=FETCH_TIMEOUT)
-            if resp.status_code != 200:
-                logger.error(f"GitHub API returned {resp.status_code} for {url}")
-                continue
-
-            for item in resp.json():
-                item_path = item.get("path", "")
-                if _is_ignored(item_path):
-                    logger.info(f"Ignoring {item_path} (in ignore list)")
-                    continue
-                if item.get("type") == "dir":
-                    dirs_to_visit.append(item_path)
-                elif item.get("type") == "file" and item_path.endswith(".jenkinsfile"):
-                    paths.append(item_path)
-
-        except requests.RequestException as e:
-            logger.error(f"Failed to list {current_dir}: {e}")
-
-    logger.info(f"Discovered {len(paths)} Jenkinsfiles under {directory}")
-    return paths
 
 
 def _fetch_jenkinsfile(path: str) -> Optional[str]:
@@ -102,15 +56,12 @@ def _fetch_jenkinsfile(path: str) -> Optional[str]:
 
 
 def _fetch_and_parse_all() -> JobRegistry:
-    """Discover, fetch, and parse all Jenkinsfiles into a JobRegistry."""
+    """Fetch all configured Jenkinsfiles, parse them, and build a JobRegistry."""
     parser = JenkinsfileParser()
     registry = JobRegistry()
+    fetched = 0
 
-    jenkinsfile_paths = _discover_jenkinsfiles()
-    loaded = 0
-    skipped_no_annotation = 0
-
-    for path in jenkinsfile_paths:
+    for path in JENKINSFILE_PATHS:
         content = _fetch_jenkinsfile(path)
         if content is None:
             logger.warning(f"Skipping {path} (fetch failed)")
@@ -119,19 +70,12 @@ def _fetch_and_parse_all() -> JobRegistry:
         try:
             parsed_job: ParsedJob = parser.parse(content, path)
             registry.load_parsed_job(parsed_job)
-            loaded += 1
+            fetched += 1
             logger.info(f"Loaded job '{parsed_job.job_name}' from {path} ({len(parsed_job.parameters)} params)")
-        except ValueError:
-            # No @job-name annotation — not an OSCAR-managed job, skip silently
-            skipped_no_annotation += 1
         except Exception as e:
             logger.error(f"Failed to parse {path}: {e}")
 
-    logger.info(
-        f"Job registry built: {loaded} loaded, "
-        f"{skipped_no_annotation} skipped (no annotation), "
-        f"{len(jenkinsfile_paths)} total discovered"
-    )
+    logger.info(f"Job registry built: {fetched}/{len(JENKINSFILE_PATHS)} Jenkinsfiles loaded")
     return registry
 
 
