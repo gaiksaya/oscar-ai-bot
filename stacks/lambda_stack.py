@@ -154,16 +154,6 @@ class OscarLambdaStack(Stack):
                     env_vars[secret_config.env_var] = secret.secret_name
                     secret.grant_read(role)
 
-            # Merge plugin secret names into Lambda environment variables
-            env_vars = dict(config.environment_variables)
-            for secret_config in plugin.get_secrets():
-                secret = self.secrets_stack.get_plugin_secret(
-                    plugin.name, secret_config.name_suffix
-                )
-                if secret:
-                    env_vars[secret_config.env_var] = secret.secret_name
-                    secret.grant_read(role)
-
             kwargs = dict(
                 function_name=fn_name,
                 runtime=aws_lambda.Runtime.PYTHON_3_12,
