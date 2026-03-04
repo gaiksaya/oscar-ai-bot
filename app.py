@@ -29,7 +29,6 @@ from stacks.secrets_stack import OscarSecretsStack
 from stacks.storage_stack import OscarStorageStack
 from stacks.vpc_stack import OscarVpcStack
 
-from dotenv import load_dotenv
 load_dotenv()
 
 
