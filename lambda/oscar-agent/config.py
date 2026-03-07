@@ -16,14 +16,11 @@ Classes:
     Config: Main configuration class with validation and environment variable handling
 """
 
-import json
 import logging
 import os
-from io import StringIO
-from typing import Optional, Tuple
+from typing import Dict
 
 import boto3
-from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -45,58 +42,41 @@ class Config:
         Raises:
             ValueError: If required environment variables are missing
         """
-        # Load environment variables from AWS Secrets Manager
-        self._load_env()
+        # Load credentials + auth config from central secret
+        secrets = self._load_from_central_secret()
+        self.slack_bot_token = secrets.get('SLACK_BOT_TOKEN', '')
+        self.slack_signing_secret = secrets.get('SLACK_SIGNING_SECRET', '')
+        self.dm_authorized_users = [u.strip() for u in secrets.get('DM_AUTHORIZED_USERS', '').split(',') if u.strip()]
+        self.fully_authorized_users = [u.strip() for u in secrets.get('FULLY_AUTHORIZED_USERS', '').split(',') if u.strip()]
+        self.channel_allow_list = [c.strip() for c in secrets.get('CHANNEL_ALLOW_LIST', '').split(',') if c.strip()]
+
+        if validate_required and not self.slack_bot_token:
+            raise ValueError("SLACK_BOT_TOKEN not found in central secret")
+        if validate_required and not self.slack_signing_secret:
+            raise ValueError("SLACK_SIGNING_SECRET not found in central secret")
 
         # AWS region
         self.region = os.environ.get('AWS_REGION', 'us-east-1')
 
-        # Dual-agent security configuration - load from SSM Parameter Store
+        # Bedrock agent IDs from SSM
         self._load_agent_config_from_ssm()
 
-        # Only validate Bedrock agent config if we're in the main agent (not communication handler)
         if validate_required and not self.oscar_privileged_bedrock_agent_id:
-            logger.error("OSCAR_PRIVILEGED_BEDROCK_AGENT_ID environment variable is required")
-            raise ValueError("OSCAR_PRIVILEGED_BEDROCK_AGENT_ID environment variable is required")
-
+            raise ValueError("OSCAR_PRIVILEGED_BEDROCK_AGENT_ID is required")
         if validate_required and not self.oscar_privileged_bedrock_agent_alias_id:
-            logger.error("OSCAR_PRIVILEGED_BEDROCK_AGENT_ALIAS_ID environment variable is required")
-            raise ValueError("OSCAR_PRIVILEGED_BEDROCK_AGENT_ALIAS_ID environment variable is required")
-
+            raise ValueError("OSCAR_PRIVILEGED_BEDROCK_AGENT_ALIAS_ID is required")
         if validate_required and not self.oscar_limited_bedrock_agent_id:
-            logger.error("OSCAR_LIMITED_BEDROCK_AGENT_ID environment variable is required")
-            raise ValueError("OSCAR_LIMITED_BEDROCK_AGENT_ID environment variable is required")
-
+            raise ValueError("OSCAR_LIMITED_BEDROCK_AGENT_ID is required")
         if validate_required and not self.oscar_limited_bedrock_agent_alias_id:
-            logger.error("OSCAR_LIMITED_BEDROCK_AGENT_ALIAS_ID environment variable is required")
-            raise ValueError("OSCAR_LIMITED_BEDROCK_AGENT_ALIAS_ID environment variable is required")
+            raise ValueError("OSCAR_LIMITED_BEDROCK_AGENT_ALIAS_ID is required")
 
-        # DynamoDB tables
+        # Infrastructure (set by CDK)
         self.context_table_name = os.environ.get('CONTEXT_TABLE_NAME')
         if validate_required and not self.context_table_name:
-            logger.error("CONTEXT_TABLE_NAME environment variable is required")
-            raise ValueError("CONTEXT_TABLE_NAME environment variable is required")
+            raise ValueError("CONTEXT_TABLE_NAME is required")
 
-        # Slack credentials
-        self.slack_bot_token = os.environ.get('SLACK_BOT_TOKEN')
-        self.slack_signing_secret = os.environ.get('SLACK_SIGNING_SECRET')
-
-        # Only validate Slack credentials if we're in a component that needs them
-        if validate_required and not self.slack_bot_token:
-            logger.error("SLACK_BOT_TOKEN environment variable is required")
-            raise ValueError("SLACK_BOT_TOKEN environment variable is required")
-
-        if validate_required and not self.slack_signing_secret:
-            logger.error("SLACK_SIGNING_SECRET environment variable is required")
-            raise ValueError("SLACK_SIGNING_SECRET environment variable is required")
-
-        # TTL settings
-        self.session_ttl = int(os.environ.get('SESSION_TTL', 3600))  # 1 hour
-        self.context_ttl = int(os.environ.get('CONTEXT_TTL', 604800))  # 7 days
-
-        # Context settings
-        self.max_context_length = int(os.environ.get('MAX_CONTEXT_LENGTH', 8000))
-        self.context_summary_length = int(os.environ.get('CONTEXT_SUMMARY_LENGTH', 1000))
+        # Config (set by CDK from .env or defaults)
+        self.context_ttl = int(os.environ.get('CONTEXT_TTL', 604800))
 
         # Feature flags
         self.enable_dm = os.environ.get('ENABLE_DM', 'false').lower() == 'true'
@@ -117,26 +97,6 @@ class Config:
         # Thread naming
         self.slack_handler_thread_prefix = os.environ.get('SLACK_HANDLER_THREAD_NAME_PREFIX', 'oscar-agent')
 
-        # DM Authorization - users who can DM the bot
-        dm_authorized_users = os.environ.get('DM_AUTHORIZED_USERS', '')
-        self.dm_authorized_users = [u.strip() for u in dm_authorized_users.split(',') if u.strip()]
-
-        channel_allow_list = os.environ.get('CHANNEL_ALLOW_LIST', '')
-        self.channel_allow_list = [c.strip() for c in channel_allow_list.split(',') if c.strip()]
-
-        # Fully authorized users for dual-agent security
-        fully_authorized_users = os.environ.get('FULLY_AUTHORIZED_USERS', '')
-        self.fully_authorized_users = [u.strip() for u in fully_authorized_users.split(',') if u.strip()]
-
-        # Message formatting
-        self.message_preview_length = int(os.environ.get('MESSAGE_PREVIEW_LENGTH', 100))
-        self.query_preview_length = int(os.environ.get('QUERY_PREVIEW_LENGTH', 50))
-        self.response_preview_length = int(os.environ.get('RESPONSE_PREVIEW_LENGTH', 50))
-
-        # Bedrock response configuration
-        self.bedrock_message_version = os.environ.get('BEDROCK_RESPONSE_MESSAGE_VERSION', '1.0')
-        self.bedrock_action_group = os.environ.get('BEDROCK_ACTION_GROUP_NAME', 'communication-orchestration')
-
         # Agent query templates
         self.agent_queries = {
             'announce': os.environ.get('AGENT_QUERY_ANNOUNCE', ''),
@@ -147,15 +107,6 @@ class Config:
             'integration_test': os.environ.get('AGENT_QUERY_INTEGRATION_TEST', ''),
             'broadcast': os.environ.get('AGENT_QUERY_BROADCAST', '')
         }
-
-        # Channel mappings - load from JSON string in environment
-        channel_mappings_str = os.environ.get('CHANNEL_MAPPINGS', '{}')
-        try:
-            self.channel_mappings = json.loads(channel_mappings_str)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse CHANNEL_MAPPINGS JSON: {e}")
-            # Fallback to empty dict
-            self.channel_mappings = {}
 
         # Regex patterns
         self.patterns = {
@@ -172,45 +123,48 @@ class Config:
             'version': os.environ.get('VERSION_PATTERN', r'version\s+(\d+\.\d+\.\d+)')
         }
 
-        # Logging and preview settings
+        # Logging
         self.log_query_preview_length = int(os.environ.get('LOG_QUERY_PREVIEW_LENGTH', 100))
-        self.log_context_preview_length = int(os.environ.get('LOG_CONTEXT_PREVIEW_LENGTH', 200))
-        self.log_history_preview_length = int(os.environ.get('LOG_HISTORY_PREVIEW_LENGTH', 50))
-        self.log_max_history_entries = int(os.environ.get('LOG_MAX_HISTORY_ENTRIES', 2))
 
-        # Phase 2: Multi-agent configuration (for individual use or testing)
-        # self.oscar_knowledge_agent_id = os.environ.get('OSCAR_KNOWLEDGE_AGENT_ID')
-        # self.oscar_knowledge_agent_alias_id = os.environ.get('OSCAR_KNOWLEDGE_AGENT_ALIAS_ID')
-        # self.oscar_metrics_agent_id = os.environ.get('OSCAR_METRICS_AGENT_ID')
-        # self.oscar_metrics_agent_alias_id = os.environ.get('OSCAR_METRICS_AGENT_ALIAS_ID')
-        # self.oscar_build_agent_id = os.environ.get('OSCAR_BUILD_AGENT_ID')
-        # self.oscar_build_agent_alias_id = os.environ.get('OSCAR_BUILD_AGENT_ALIAS_ID')
-        # self.oscar_test_agent_id = os.environ.get('OSCAR_TEST_AGENT_ID')
-        # self.oscar_test_agent_alias_id = os.environ.get('OSCAR_TEST_AGENT_ALIAS_ID')
+    def _load_from_central_secret(self) -> Dict[str, str]:
+        """Load credentials and auth config from the central secret.
 
-    def _load_env(self) -> None:
-        """Load environment variables from AWS Secrets Manager."""
+        Parses the .env-formatted secret and returns only the keys we need.
+        Does NOT inject anything into os.environ.
+        """
+        keys_to_extract = {
+            'SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET',
+            'DM_AUTHORIZED_USERS', 'FULLY_AUTHORIZED_USERS', 'CHANNEL_ALLOW_LIST',
+        }
+        result: Dict[str, str] = {}
+
+        secret_name = os.environ.get('CENTRAL_SECRET_NAME')
+        if not secret_name:
+            logger.error("CENTRAL_SECRET_NAME environment variable is not set")
+            return result
+
         try:
-            session = boto3.session.Session()
-            client = session.client(
-                service_name='secretsmanager',
+            client = boto3.client(
+                'secretsmanager',
                 region_name=os.getenv('AWS_REGION', 'us-east-1')
             )
+            response = client.get_secret_value(SecretId=secret_name)
+            content = response['SecretString']
 
-            # Get the .env content from secrets manager
-            response = client.get_secret_value(SecretId=os.environ.get('CENTRAL_SECRET_NAME'))
-            env_content = response['SecretString']
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, _, value = line.partition('=')
+                key = key.strip()
+                if key in keys_to_extract:
+                    result[key] = value.strip()
 
-            # Load the .env content into environment variables
-            config_stream = StringIO(env_content)
-            load_dotenv(stream=config_stream, override=True)
-
-            logger.info("Successfully loaded environment variables from AWS Secrets Manager")
-
+            logger.info(f"Loaded {len(result)} keys from central secret")
         except Exception as e:
-            logger.error(f"Error loading environment from secrets manager: {e}")
-            logger.warning("Falling back to local environment variables")
-            # Continue with local environment variables if secrets manager fails
+            logger.error(f"Failed to load central secret '{secret_name}': {e}")
+
+        return result
 
     def _load_agent_config_from_ssm(self) -> None:
         """Load Bedrock agent IDs and aliases from SSM Parameter Store."""
@@ -248,20 +202,6 @@ class Config:
 
         except Exception as e:
             logger.error(f"Error loading agent config from SSM: {e}")
-            # Fallback to direct env vars if SSM fails
-            self.oscar_privileged_bedrock_agent_id = os.environ.get('OSCAR_PRIVILEGED_BEDROCK_AGENT_ID', None)
-            self.oscar_privileged_bedrock_agent_alias_id = os.environ.get('OSCAR_PRIVILEGED_BEDROCK_AGENT_ALIAS_ID', None)
-            self.oscar_limited_bedrock_agent_id = os.environ.get('OSCAR_LIMITED_BEDROCK_AGENT_ID')
-            self.oscar_limited_bedrock_agent_alias_id = os.environ.get('OSCAR_LIMITED_BEDROCK_AGENT_ALIAS_ID')
-
-    def get_slack_credentials(self) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Get Slack credentials from environment variables.
-
-        Returns:
-            A tuple containing (slack_bot_token, slack_signing_secret)
-        """
-        return self.slack_bot_token, self.slack_signing_secret
 
 
 class _ConfigProxy:

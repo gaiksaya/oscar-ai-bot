@@ -186,24 +186,69 @@ class OscarLambdaStack(Stack):
             created_entries[config.entry] = function
 
     # ------------------------------------------------------------- env vars
+
+    # Defaults for oscar-agent config (overridable via .env at deploy time)
+    _AGENT_DEFAULTS: Dict[str, str] = {
+        "ENABLE_DM": "false",
+        "CONTEXT_TTL": "604800",
+        "AGENT_TIMEOUT": "90",
+        "AGENT_MAX_RETRIES": "2",
+        "HOURGLASS_THRESHOLD_SECONDS": "45",
+        "TIMEOUT_THRESHOLD_SECONDS": "120",
+        "MAX_WORKERS": "100",
+        "MAX_ACTIVE_QUERIES": "100",
+        "MONITOR_INTERVAL_SECONDS": "15",
+        "SLACK_HANDLER_THREAD_NAME_PREFIX": "oscar-agent",
+        "AGENT_QUERY_ANNOUNCE": "",
+        "AGENT_QUERY_ASSIGN_OWNER": "",
+        "AGENT_QUERY_REQUEST_OWNER": "",
+        "AGENT_QUERY_RC_DETAILS": "",
+        "AGENT_QUERY_MISSING_NOTES": "",
+        "AGENT_QUERY_INTEGRATION_TEST": "",
+        "AGENT_QUERY_BROADCAST": "",
+        "CHANNEL_ID_PATTERN": r"\b(C[A-Z0-9]{10,})\b",
+        "CHANNEL_REF_PATTERN": r"#([a-z0-9-]+)",
+        "AT_SYMBOL_PATTERN": r"@([a-zA-Z0-9_-]+)",
+        "MENTION_PATTERN": r"<@[A-Z0-9]+>",
+        "HEADING_PATTERN": r"^#{1,6}\s+(.+)$",
+        "BOLD_PATTERN": r"\*\*(.+?)\*\*",
+        "ITALIC_PATTERN": r"(?<!\*)\*([^*]+?)\*(?!\*)",
+        "LINK_PATTERN": r"\[([^\]]+)\]\(([^)]+)\)",
+        "BULLET_PATTERN": r"^[\*\-]\s+",
+        "CHANNEL_MENTION_PATTERN": r"(?<!<)#([a-zA-Z0-9_-]+)(?!>)",
+        "VERSION_PATTERN": r"version\s+(\d+\.\d+\.\d+)",
+        "LOG_QUERY_PREVIEW_LENGTH": "100",
+    }
+
+    # Defaults for communication-handler config
+    _COMM_HANDLER_DEFAULTS: Dict[str, str] = {
+        "CONTEXT_TTL": "604800",
+        "BEDROCK_RESPONSE_MESSAGE_VERSION": "1.0",
+        "CHANNEL_MAPPINGS": "{}",
+        "CHANNEL_ID_PATTERN": r"\b(C[A-Z0-9]{10,})\b",
+        "CHANNEL_REF_PATTERN": r"#([a-z0-9-]+)",
+        "MESSAGE_TIMEOUT": "30",
+        "LOG_LEVEL": "INFO",
+    }
+
     def _get_main_agent_environment_variables(self) -> Dict[str, str]:
         params = get_ssm_param_paths(self.env_name)
-        return {
+        env = {k: os.environ.get(k, v) for k, v in self._AGENT_DEFAULTS.items()}
+        env.update({
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
             "OSCAR_PRIVILEGED_BEDROCK_AGENT_ID_PARAM_PATH": params["supervisor_agent_id"],
             "OSCAR_PRIVILEGED_BEDROCK_AGENT_ALIAS_PARAM_PATH": params["supervisor_agent_alias"],
             "OSCAR_LIMITED_BEDROCK_AGENT_ID_PARAM_PATH": params["limited_supervisor_agent_id"],
             "OSCAR_LIMITED_BEDROCK_AGENT_ALIAS_PARAM_PATH": params["limited_supervisor_agent_alias"],
-            "ENABLE_DM": os.environ.get("ENABLE_DM", "false"),
             "AWS_ACCOUNT_ID": os.environ.get("AWS_ACCOUNT_ID") or os.environ.get("CDK_DEFAULT_ACCOUNT", ""),
-        }
+        })
+        return env
 
     def _get_communication_handler_environment_variables(self) -> Dict[str, str]:
-        return {
+        env = {k: os.environ.get(k, v) for k, v in self._COMM_HANDLER_DEFAULTS.items()}
+        env.update({
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
-            "MESSAGE_TIMEOUT": os.environ.get("MESSAGE_TIMEOUT", "30"),
-            "MAX_RETRIES": os.environ.get("MAX_RETRIES", "3"),
-            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "INFO"),
-        }
+        })
+        return env
