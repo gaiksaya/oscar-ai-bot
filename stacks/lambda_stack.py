@@ -187,53 +187,34 @@ class OscarLambdaStack(Stack):
 
     # ------------------------------------------------------------- env vars
 
-    # Defaults for oscar-agent config (overridable via .env at deploy time)
-    _AGENT_DEFAULTS: Dict[str, str] = {
-        "ENABLE_DM": "false",
-        "CONTEXT_TTL": "604800",
-        "AGENT_TIMEOUT": "90",
-        "AGENT_MAX_RETRIES": "2",
-        "HOURGLASS_THRESHOLD_SECONDS": "45",
-        "TIMEOUT_THRESHOLD_SECONDS": "120",
-        "MAX_WORKERS": "100",
-        "MAX_ACTIVE_QUERIES": "100",
-        "MONITOR_INTERVAL_SECONDS": "15",
-        "SLACK_HANDLER_THREAD_NAME_PREFIX": "oscar-agent",
-        "AGENT_QUERY_ANNOUNCE": "",
-        "AGENT_QUERY_ASSIGN_OWNER": "",
-        "AGENT_QUERY_REQUEST_OWNER": "",
-        "AGENT_QUERY_RC_DETAILS": "",
-        "AGENT_QUERY_MISSING_NOTES": "",
-        "AGENT_QUERY_INTEGRATION_TEST": "",
-        "AGENT_QUERY_BROADCAST": "",
-        "CHANNEL_ID_PATTERN": r"\b(C[A-Z0-9]{10,})\b",
-        "CHANNEL_REF_PATTERN": r"#([a-z0-9-]+)",
-        "AT_SYMBOL_PATTERN": r"@([a-zA-Z0-9_-]+)",
-        "MENTION_PATTERN": r"<@[A-Z0-9]+>",
-        "HEADING_PATTERN": r"^#{1,6}\s+(.+)$",
-        "BOLD_PATTERN": r"\*\*(.+?)\*\*",
-        "ITALIC_PATTERN": r"(?<!\*)\*([^*]+?)\*(?!\*)",
-        "LINK_PATTERN": r"\[([^\]]+)\]\(([^)]+)\)",
-        "BULLET_PATTERN": r"^[\*\-]\s+",
-        "CHANNEL_MENTION_PATTERN": r"(?<!<)#([a-zA-Z0-9_-]+)(?!>)",
-        "VERSION_PATTERN": r"version\s+(\d+\.\d+\.\d+)",
-        "LOG_QUERY_PREVIEW_LENGTH": "100",
-    }
+    # Keys to pass through from .env to Lambda (if set). Lambda config.py has its own defaults.
+    _AGENT_ENV_KEYS = [
+        "ENABLE_DM", "CONTEXT_TTL", "AGENT_TIMEOUT", "AGENT_MAX_RETRIES",
+        "HOURGLASS_THRESHOLD_SECONDS", "TIMEOUT_THRESHOLD_SECONDS",
+        "MAX_WORKERS", "MAX_ACTIVE_QUERIES", "MONITOR_INTERVAL_SECONDS",
+        "SLACK_HANDLER_THREAD_NAME_PREFIX",
+        "AGENT_QUERY_ANNOUNCE", "AGENT_QUERY_ASSIGN_OWNER", "AGENT_QUERY_REQUEST_OWNER",
+        "AGENT_QUERY_RC_DETAILS", "AGENT_QUERY_MISSING_NOTES",
+        "AGENT_QUERY_INTEGRATION_TEST", "AGENT_QUERY_BROADCAST",
+        "CHANNEL_ID_PATTERN", "CHANNEL_REF_PATTERN", "AT_SYMBOL_PATTERN",
+        "MENTION_PATTERN", "HEADING_PATTERN", "BOLD_PATTERN", "ITALIC_PATTERN",
+        "LINK_PATTERN", "BULLET_PATTERN", "CHANNEL_MENTION_PATTERN", "VERSION_PATTERN",
+        "LOG_QUERY_PREVIEW_LENGTH",
+    ]
 
-    # Defaults for communication-handler config
-    _COMM_HANDLER_DEFAULTS: Dict[str, str] = {
-        "CONTEXT_TTL": "604800",
-        "BEDROCK_RESPONSE_MESSAGE_VERSION": "1.0",
-        "CHANNEL_MAPPINGS": "{}",
-        "CHANNEL_ID_PATTERN": r"\b(C[A-Z0-9]{10,})\b",
-        "CHANNEL_REF_PATTERN": r"#([a-z0-9-]+)",
-        "MESSAGE_TIMEOUT": "30",
-        "LOG_LEVEL": "INFO",
-    }
+    _COMM_HANDLER_ENV_KEYS = [
+        "CONTEXT_TTL", "BEDROCK_RESPONSE_MESSAGE_VERSION", "CHANNEL_MAPPINGS",
+        "CHANNEL_ID_PATTERN", "CHANNEL_REF_PATTERN", "MESSAGE_TIMEOUT", "LOG_LEVEL",
+    ]
+
+    @staticmethod
+    def _passthrough_env(keys: List[str]) -> Dict[str, str]:
+        """Pass through env vars from .env to Lambda — only if set."""
+        return {k: os.environ[k] for k in keys if k in os.environ}
 
     def _get_main_agent_environment_variables(self) -> Dict[str, str]:
         params = get_ssm_param_paths(self.env_name)
-        env = {k: os.environ.get(k, v) for k, v in self._AGENT_DEFAULTS.items()}
+        env = self._passthrough_env(self._AGENT_ENV_KEYS)
         env.update({
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
@@ -246,7 +227,7 @@ class OscarLambdaStack(Stack):
         return env
 
     def _get_communication_handler_environment_variables(self) -> Dict[str, str]:
-        env = {k: os.environ.get(k, v) for k, v in self._COMM_HANDLER_DEFAULTS.items()}
+        env = self._passthrough_env(self._COMM_HANDLER_ENV_KEYS)
         env.update({
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
