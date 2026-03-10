@@ -186,24 +186,50 @@ class OscarLambdaStack(Stack):
             created_entries[config.entry] = function
 
     # ------------------------------------------------------------- env vars
+
+    # Keys to pass through from .env to Lambda (if set). Lambda config.py has its own defaults.
+    _AGENT_ENV_KEYS = [
+        "ENABLE_DM", "CONTEXT_TTL", "AGENT_TIMEOUT", "AGENT_MAX_RETRIES",
+        "HOURGLASS_THRESHOLD_SECONDS", "TIMEOUT_THRESHOLD_SECONDS",
+        "MAX_WORKERS", "MAX_ACTIVE_QUERIES", "MONITOR_INTERVAL_SECONDS",
+        "SLACK_HANDLER_THREAD_NAME_PREFIX",
+        "AGENT_QUERY_ANNOUNCE", "AGENT_QUERY_ASSIGN_OWNER", "AGENT_QUERY_REQUEST_OWNER",
+        "AGENT_QUERY_RC_DETAILS", "AGENT_QUERY_MISSING_NOTES",
+        "AGENT_QUERY_INTEGRATION_TEST", "AGENT_QUERY_BROADCAST",
+        "CHANNEL_ID_PATTERN", "CHANNEL_REF_PATTERN", "AT_SYMBOL_PATTERN",
+        "MENTION_PATTERN", "HEADING_PATTERN", "BOLD_PATTERN", "ITALIC_PATTERN",
+        "LINK_PATTERN", "BULLET_PATTERN", "CHANNEL_MENTION_PATTERN", "VERSION_PATTERN",
+        "LOG_QUERY_PREVIEW_LENGTH",
+    ]
+
+    _COMM_HANDLER_ENV_KEYS = [
+        "CONTEXT_TTL", "BEDROCK_RESPONSE_MESSAGE_VERSION", "CHANNEL_MAPPINGS",
+        "CHANNEL_ID_PATTERN", "CHANNEL_REF_PATTERN", "MESSAGE_TIMEOUT", "LOG_LEVEL",
+    ]
+
+    @staticmethod
+    def _passthrough_env(keys: List[str]) -> Dict[str, str]:
+        """Pass through env vars from .env to Lambda — only if set."""
+        return {k: os.environ[k] for k in keys if k in os.environ}
+
     def _get_main_agent_environment_variables(self) -> Dict[str, str]:
         params = get_ssm_param_paths(self.env_name)
-        return {
+        env = self._passthrough_env(self._AGENT_ENV_KEYS)
+        env.update({
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
             "OSCAR_PRIVILEGED_BEDROCK_AGENT_ID_PARAM_PATH": params["supervisor_agent_id"],
             "OSCAR_PRIVILEGED_BEDROCK_AGENT_ALIAS_PARAM_PATH": params["supervisor_agent_alias"],
             "OSCAR_LIMITED_BEDROCK_AGENT_ID_PARAM_PATH": params["limited_supervisor_agent_id"],
             "OSCAR_LIMITED_BEDROCK_AGENT_ALIAS_PARAM_PATH": params["limited_supervisor_agent_alias"],
-            "ENABLE_DM": os.environ.get("ENABLE_DM", "false"),
             "AWS_ACCOUNT_ID": os.environ.get("AWS_ACCOUNT_ID") or os.environ.get("CDK_DEFAULT_ACCOUNT", ""),
-        }
+        })
+        return env
 
     def _get_communication_handler_environment_variables(self) -> Dict[str, str]:
-        return {
+        env = self._passthrough_env(self._COMM_HANDLER_ENV_KEYS)
+        env.update({
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
-            "MESSAGE_TIMEOUT": os.environ.get("MESSAGE_TIMEOUT", "30"),
-            "MAX_RETRIES": os.environ.get("MAX_RETRIES", "3"),
-            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "INFO"),
-        }
+        })
+        return env
