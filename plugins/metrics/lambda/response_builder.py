@@ -23,6 +23,7 @@ from typing import Any, Dict
 from config import config
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def create_response(event: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:

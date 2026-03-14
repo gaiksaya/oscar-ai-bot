@@ -30,6 +30,7 @@ from summary_generators import (generate_build_summary,
                                 generate_release_summary)
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def handle_metrics_query(agent_type: str, function_name: str, params: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:

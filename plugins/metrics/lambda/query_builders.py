@@ -25,6 +25,7 @@ from aws_utils import opensearch_request
 from config import config
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def query_integration_test_results(

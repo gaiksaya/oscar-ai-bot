@@ -25,6 +25,7 @@ import logging
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def deduplicate_by_highest_build_number(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

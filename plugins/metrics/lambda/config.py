@@ -21,6 +21,7 @@ from typing import Dict
 import boto3
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class MetricsConfig:
