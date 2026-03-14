@@ -33,7 +33,7 @@ logger.setLevel(logging.INFO)
 def get_opensearch_session():
     """Get boto3 session with assumed cross-account role."""
     sts_client = boto3.client('sts')
-    logger.info(f"Assuming cross-account role: {config.metrics_cross_account_role_arn}")
+    logger.info("Assuming cross-account role!")
     try:
         response = sts_client.assume_role(
             RoleArn=config.metrics_cross_account_role_arn,
@@ -58,7 +58,6 @@ def opensearch_request(method, path, body=None):
         raise ValueError("OPENSEARCH_HOST not configured")
 
     url = f'https://{opensearch_host}{path}'
-    logger.info(f"OpenSearch request: {method} {url}")
     session = get_opensearch_session()
 
     # Create signed request
