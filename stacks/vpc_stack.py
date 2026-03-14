@@ -113,51 +113,22 @@ class OscarVpcStack(Stack):
             self, "OscarLambdaSecurityGroup",
             vpc=self.vpc,
             description="Security group for OSCAR Lambda functions with OpenSearch access",
-            allow_all_outbound=False  # We'll configure specific outbound rules
+            allow_all_outbound=True,
         )
 
-        # Add outbound rules for HTTPS access to AWS services
-        security_group.add_egress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.tcp(443),
-            description="HTTPS access for AWS services and OpenSearch"
+        # Inbound: all traffic from itself (Lambda <-> VPC endpoints)
+        security_group.add_ingress_rule(
+            peer=security_group,
+            connection=ec2.Port.all_traffic(),
         )
 
-        # Add outbound rule for HTTP (if needed for some services)
-        security_group.add_egress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.tcp(80),
-            description="HTTP access for external APIs"
-        )
-
-        # Add outbound rule for DNS resolution
-        security_group.add_egress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.udp(53),
-            description="DNS resolution"
-        )
-
-        security_group.add_egress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.tcp(53),
-            description="DNS resolution over TCP"
-        )
-
-        # Add specific rule for OpenSearch access (port 9200 and 9300 if needed)
-        security_group.add_egress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.tcp(9200),
-            description="OpenSearch HTTP access"
-        )
-
-        # Add rule for VPC endpoint access within VPC
-        security_group.add_egress_rule(
+        # Inbound: HTTPS from VPC CIDR
+        security_group.add_ingress_rule(
             peer=ec2.Peer.ipv4(self.vpc.vpc_cidr_block),
             connection=ec2.Port.tcp(443),
-            description="VPC endpoint access within VPC"
+            description=f"from {self.vpc.vpc_cidr_block}:443",
         )
 
-        # logger.info("Created Lambda security group with OpenSearch access rules")
         return security_group
 
     def _create_vpc_endpoints(self) -> None:
