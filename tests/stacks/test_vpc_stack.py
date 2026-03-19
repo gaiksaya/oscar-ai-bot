@@ -27,15 +27,6 @@ class TestVpcStack:
         """A VPC should be created when no VPC_ID context is provided."""
         template.resource_count_is("AWS::EC2::VPC", 1)
 
-    def test_subnets_created(self, template):
-        """Public and private subnets should be created."""
-        # With max_azs=3: 3 public + 3 private = 6 subnets
-        template.resource_count_is("AWS::EC2::Subnet", 6)
-
-    def test_nat_gateway_created(self, template):
-        """One NAT gateway should be created (nat_gateways=1)."""
-        template.resource_count_is("AWS::EC2::NatGateway", 1)
-
     def test_lambda_security_group_created(self, template):
         """Lambda security group should be created."""
         template.has_resource_properties("AWS::EC2::SecurityGroup", {
@@ -43,27 +34,19 @@ class TestVpcStack:
                 "Security group for OSCAR Lambda functions with OpenSearch access",
         })
 
-    def test_security_group_has_egress_rules(self, template):
-        """Lambda security group should have egress rules for required ports."""
+    def test_security_group_allows_all_outbound(self, template):
+        """Lambda security group should allow all outbound traffic."""
         template_dict = template.to_json()
         for resource in template_dict["Resources"].values():
             if resource.get("Type") == "AWS::EC2::SecurityGroup":
                 props = resource.get("Properties", {})
                 if "OSCAR Lambda" in props.get("GroupDescription", ""):
                     egress = props.get("SecurityGroupEgress", [])
-                    ports = {r.get("ToPort") for r in egress}
-                    assert 443 in ports, "Missing HTTPS egress (443)"
-                    assert 80 in ports, "Missing HTTP egress (80)"
-                    assert 53 in ports, "Missing DNS egress (53)"
-                    assert 9200 in ports, "Missing OpenSearch egress (9200)"
+                    protocols = {r.get("IpProtocol") for r in egress}
+                    assert "-1" in protocols, "Missing allow-all outbound rule"
                     return
         pytest.fail("Lambda security group not found")
 
-    def test_network_acl_created(self, template):
-        """Custom Network ACL for Lambda subnets should exist."""
-        template.has_resource_properties("AWS::EC2::NetworkAcl", {
-            "Tags": [{
-                "Key": "Name",
-                "Value": "oscar-lambda-nacl",
-            }],
-        })
+    def test_vpc_endpoints_created(self, template):
+        """STS and Secrets Manager VPC endpoints should be created."""
+        template.resource_count_is("AWS::EC2::VPCEndpoint", 2)

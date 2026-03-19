@@ -30,6 +30,7 @@ from metrics_handler import handle_metrics_query
 from response_builder import create_response
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

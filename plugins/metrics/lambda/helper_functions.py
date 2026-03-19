@@ -26,6 +26,7 @@ from aws_utils import opensearch_request
 from config import config
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def resolve_components_from_build_numbers(version: str, build_numbers: List[str]) -> Dict[str, List[str]]:

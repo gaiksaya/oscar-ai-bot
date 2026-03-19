@@ -22,6 +22,7 @@ import logging
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def generate_integration_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:

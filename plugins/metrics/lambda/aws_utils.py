@@ -27,15 +27,22 @@ from botocore.awsrequest import AWSRequest
 from config import config
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def get_opensearch_session():
     """Get boto3 session with assumed cross-account role."""
     sts_client = boto3.client('sts')
-    response = sts_client.assume_role(
-        RoleArn=config.metrics_cross_account_role_arn,
-        RoleSessionName='oscar-metrics-session'
-    )
+    logger.info("Assuming cross-account role!")
+    try:
+        response = sts_client.assume_role(
+            RoleArn=config.metrics_cross_account_role_arn,
+            RoleSessionName='oscar-metrics-session'
+        )
+        logger.info("Successfully assumed cross-account role")
+    except Exception as e:
+        logger.error(f"Failed to assume cross-account role: {e}")
+        raise
 
     return boto3.Session(
         aws_access_key_id=response['Credentials']['AccessKeyId'],
@@ -66,13 +73,17 @@ def opensearch_request(method, path, body=None):
     SigV4Auth(credentials, config.opensearch_service, config.opensearch_region).add_auth(request)
 
     # Make the request
-    response = requests.request(
-        method=request.method,
-        url=request.url,
-        data=request.body,
-        headers=dict(request.headers),
-        timeout=config.opensearch_request_timeout
-    )
+    try:
+        response = requests.request(
+            method=request.method,
+            url=request.url,
+            data=request.body,
+            headers=dict(request.headers),
+            timeout=config.opensearch_request_timeout
+        )
+    except Exception as e:
+        logger.error(f"OpenSearch connection failed: {e}")
+        raise
 
     if response.status_code in [200, 201]:
         return response.json()
