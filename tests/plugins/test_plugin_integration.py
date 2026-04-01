@@ -3,6 +3,8 @@
 """Integration tests validating plugins conform to the OscarPlugin interface
 and are wired correctly into CDK stacks."""
 
+import ast
+import glob
 import os
 
 import pytest
@@ -11,16 +13,14 @@ from aws_cdk.assertions import Template
 
 from plugins.base_plugin import LambdaConfig, OscarPlugin
 from plugins.jenkins import JenkinsPlugin
-from plugins.metrics.build import MetricsBuildPlugin
-from plugins.metrics.release import MetricsReleasePlugin
-from plugins.metrics.test import MetricsTestPlugin
+from plugins.metrics import MetricsPlugin
 from stacks.lambda_stack import OscarLambdaStack
 from stacks.permissions_stack import OscarPermissionsStack
 from stacks.secrets_stack import OscarSecretsStack
 from stacks.storage_stack import OscarStorageStack
 from stacks.vpc_stack import OscarVpcStack
 
-ALL_PLUGINS = [JenkinsPlugin(), MetricsBuildPlugin(), MetricsTestPlugin(), MetricsReleasePlugin()]
+ALL_PLUGINS = [JenkinsPlugin(), MetricsPlugin()]
 PLUGIN_IDS = [p.name for p in ALL_PLUGINS]
 ENV = Environment(account="123456789012", region="us-east-1")
 
@@ -91,8 +91,8 @@ class TestPluginContract:
 class TestPluginRegistration:
     """Validate the specific plugin set and their access levels."""
 
-    def test_four_plugins_registered(self):
-        assert len(ALL_PLUGINS) == 4
+    def test_two_plugins_registered(self):
+        assert len(ALL_PLUGINS) == 2
 
     def test_plugin_names_are_unique(self):
         names = [p.name for p in ALL_PLUGINS]
@@ -101,14 +101,8 @@ class TestPluginRegistration:
     def test_jenkins_is_privileged_only(self):
         assert JenkinsPlugin().get_access_level() == "privileged"
 
-    def test_metrics_build_access_level(self):
-        assert MetricsBuildPlugin().get_access_level() == "both"
-
-    def test_metrics_test_access_level(self):
-        assert MetricsTestPlugin().get_access_level() == "both"
-
-    def test_metrics_release_access_level(self):
-        assert MetricsReleasePlugin().get_access_level() == "both"
+    def test_metrics_access_level(self):
+        assert MetricsPlugin().get_access_level() == "both"
 
 
 # ---------------------------------------------------------------------------
@@ -154,28 +148,168 @@ class TestPluginStackWiring:
             assert plugin.name in stacks.lambda_functions, \
                 f"Plugin '{plugin.name}' missing from lambda_functions"
 
-    def test_metrics_plugins_share_one_lambda(self, stacks):
-        """All 3 metrics plugins should resolve to the same Lambda (shared entry path)."""
-        build_fn = stacks.lambda_functions["metrics-build"]
-        test_fn = stacks.lambda_functions["metrics-test"]
-        release_fn = stacks.lambda_functions["metrics-release"]
-        assert build_fn is test_fn, "metrics-build and metrics-test should share a Lambda"
-        assert build_fn is release_fn, "metrics-build and metrics-release should share a Lambda"
-
     def test_jenkins_has_own_lambda(self, stacks):
         """Jenkins should have a separate Lambda from metrics."""
         jenkins_fn = stacks.lambda_functions["jenkins"]
-        metrics_fn = stacks.lambda_functions["metrics-build"]
+        metrics_fn = stacks.lambda_functions["metrics"]
         assert jenkins_fn is not metrics_fn
 
     def test_lambda_function_count(self, stacks):
-        """Should be 4 entries in lambda_functions dict (4 plugins) + 2 core."""
-        # 4 plugins + supervisor-agent + communication-handler = 6 entries
-        # But 3 metrics share 1 Lambda object, so 6 keys but 4 unique functions
-        assert len(stacks.lambda_functions) == 6
+        """Should be 2 plugin entries + 2 core = 4 keys in lambda_functions dict."""
+        # 2 plugins + supervisor-agent + communication-handler = 4 entries
+        assert len(stacks.lambda_functions) == 4
 
     def test_lambda_template_function_count(self, stacks):
         """CloudFormation template should have 4 Lambda functions
-        (supervisor + communication + jenkins + 1 shared metrics)."""
+        (supervisor + communication + jenkins + unified metrics)."""
         template = Template.from_stack(stacks)
         template.resource_count_is("AWS::Lambda::Function", 4)
+
+
+# ---------------------------------------------------------------------------
+# Metrics plugin — no-write guardrail tests
+# ---------------------------------------------------------------------------
+
+class TestMetricsNoWriteGuardrail:
+    """Ensure the metrics plugin never makes mutating requests to OpenSearch.
+
+    All OpenSearch calls from the metrics Lambda must be read-only (GET).
+    These tests statically verify that no code path can issue POST, PUT,
+    or DELETE requests.
+    """
+
+    def test_iam_policies_exclude_write_actions(self):
+        """IAM policies must not grant es:ESHttpPost, es:ESHttpPut, or es:ESHttpDelete."""
+        plugin = MetricsPlugin()
+        policies = plugin.get_iam_policies("123456789012", "us-east-1", "dev")
+        forbidden_actions = {"es:ESHttpPost", "es:ESHttpPut", "es:ESHttpDelete"}
+        for stmt in policies:
+            stmt_json = stmt.to_json()
+            actions = stmt_json.get("Action", [])
+            if isinstance(actions, str):
+                actions = [actions]
+            overlap = forbidden_actions & set(actions)
+            assert not overlap, (
+                f"Metrics IAM policy grants forbidden actions: {overlap}. "
+                f"This plugin must be read-only — no POST/PUT/DELETE on OpenSearch."
+            )
+
+    def test_iam_policies_exclude_wildcard_es_actions(self):
+        """IAM policies must not grant es:* (blanket OpenSearch access)."""
+        plugin = MetricsPlugin()
+        policies = plugin.get_iam_policies("123456789012", "us-east-1", "dev")
+        for stmt in policies:
+            stmt_json = stmt.to_json()
+            actions = stmt_json.get("Action", [])
+            if isinstance(actions, str):
+                actions = [actions]
+            assert "es:*" not in actions, (
+                "Metrics IAM policy must not grant wildcard es:* access"
+            )
+
+    def test_no_post_calls_in_metrics_lambda(self):
+        """No code in the metrics Lambda may invoke _make_request or opensearch_request with POST."""
+        lambda_dir = os.path.join("plugins", "metrics", "lambda")
+        violations = []
+
+        for py_file in glob.glob(os.path.join(lambda_dir, "*.py")):
+            with open(py_file) as f:
+                source = f.read()
+            try:
+                tree = ast.parse(source, filename=py_file)
+            except SyntaxError:
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = None
+                if isinstance(func, ast.Name):
+                    name = func.id
+                elif isinstance(func, ast.Attribute):
+                    name = func.attr
+                if name not in ("opensearch_request", "_make_request"):
+                    continue
+                # First positional arg is the HTTP method
+                if node.args:
+                    method_arg = node.args[0]
+                    if isinstance(method_arg, ast.Constant) and method_arg.value == "POST":
+                        violations.append(
+                            f"{os.path.basename(py_file)}:{node.lineno} "
+                            f"{name}('POST', ...) — POST is forbidden"
+                        )
+
+        assert not violations, (
+            "Metrics Lambda makes POST calls to OpenSearch:\n" +
+            "\n".join(violations)
+        )
+
+    def test_no_direct_post_put_delete_requests_in_metrics_lambda(self):
+        """Metrics Lambda must not call requests.post(), requests.put(), or requests.delete()."""
+        lambda_dir = os.path.join("plugins", "metrics", "lambda")
+        forbidden = {"post", "put", "delete"}
+        violations = []
+
+        for py_file in glob.glob(os.path.join(lambda_dir, "*.py")):
+            with open(py_file) as f:
+                source = f.read()
+            try:
+                tree = ast.parse(source, filename=py_file)
+            except SyntaxError:
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if (isinstance(func, ast.Attribute) and
+                        func.attr in forbidden and
+                        isinstance(func.value, ast.Name) and
+                        func.value.id == "requests"):
+                    violations.append(
+                        f"{os.path.basename(py_file)}:{node.lineno} "
+                        f"calls requests.{func.attr}()"
+                    )
+
+        assert not violations, (
+            "Metrics Lambda makes forbidden HTTP calls:\n" +
+            "\n".join(violations)
+        )
+
+    def test_make_request_only_called_with_get(self):
+        """_make_request() and opensearch_request() must only be invoked with GET."""
+        lambda_dir = os.path.join("plugins", "metrics", "lambda")
+        violations = []
+
+        for py_file in glob.glob(os.path.join(lambda_dir, "*.py")):
+            with open(py_file) as f:
+                source = f.read()
+            try:
+                tree = ast.parse(source, filename=py_file)
+            except SyntaxError:
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = None
+                if isinstance(func, ast.Name):
+                    name = func.id
+                elif isinstance(func, ast.Attribute):
+                    name = func.attr
+                if name not in ("_make_request", "opensearch_request"):
+                    continue
+                if node.args:
+                    method_arg = node.args[0]
+                    if isinstance(method_arg, ast.Constant) and method_arg.value != "GET":
+                        violations.append(
+                            f"{os.path.basename(py_file)}:{node.lineno} "
+                            f"{name}('{method_arg.value}', ...) — only GET allowed"
+                        )
+
+        assert not violations, (
+            "Metrics Lambda uses non-GET HTTP methods:\n" +
+            "\n".join(violations)
+        )
