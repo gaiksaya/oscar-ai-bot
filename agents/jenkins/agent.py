@@ -52,7 +52,7 @@ class JenkinsAgent(OscarAgent):
         return [
             SecretConfig(
                 name_suffix="api-token",
-                description="Jenkins API token in username:token format",
+                description="Jenkins and GitHub credentials in JSON format",
                 env_var="JENKINS_SECRET_NAME",
             ),
         ]
