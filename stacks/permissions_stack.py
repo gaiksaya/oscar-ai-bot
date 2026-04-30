@@ -89,6 +89,19 @@ class OscarPermissionsStack(Stack):
             comm_role.add_to_policy(stmt)
         roles["communication"] = comm_role
 
+        # Newsletter handler role
+        newsletter_role = iam.Role(
+            self, "NewsletterHandlerRole",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole")
+            ],
+            description="Execution role for OSCAR newsletter handler Lambda"
+        )
+        for stmt in self.policy_definitions.get_newsletter_handler_policies():
+            newsletter_role.add_to_policy(stmt)
+        roles["newsletter"] = newsletter_role
+
         return roles
 
     def _create_agent_roles(self, agents) -> Dict[str, iam.Role]:

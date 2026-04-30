@@ -30,10 +30,15 @@ class OscarStorageStack(Stack):
     """
 
     CONTEXT_TABLE_NAME = "oscar-agent-context"
+    COMPANY_CACHE_TABLE_NAME = "oscar-known-companies"
 
     @classmethod
     def get_dynamodb_table_name(cls, environment: str) -> str:
         return f"{cls.CONTEXT_TABLE_NAME}-{environment}"
+
+    @classmethod
+    def get_company_cache_table_name(cls, environment: str) -> str:
+        return f"{cls.COMPANY_CACHE_TABLE_NAME}-{environment}"
 
     def __init__(self, scope: Construct, construct_id: str, environment: str, **kwargs) -> None:
         """
@@ -46,6 +51,7 @@ class OscarStorageStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         self.context_table_name: str = self.get_dynamodb_table_name(environment)
+        self.company_cache_table_name: str = self.get_company_cache_table_name(environment)
 
         # Get TTL values from environment
         context_ttl: int = int(os.environ.get("CONTEXT_TTL", "604800"))  # 7 days default
@@ -60,6 +66,12 @@ class OscarStorageStack(Stack):
             self.context_table_name,
             removal_policy,
             context_ttl
+        )
+
+        # Create company cache table for newsletter contributor affiliations
+        self.company_cache_table = self._create_company_cache_table(
+            self.company_cache_table_name,
+            removal_policy,
         )
 
         # Create monitoring and alerting for context table only
@@ -97,6 +109,25 @@ class OscarStorageStack(Stack):
             deletion_protection=removal_policy == RemovalPolicy.RETAIN,
             stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
             contributor_insights_enabled=True
+        )
+
+    def _create_company_cache_table(
+        self,
+        table_name: str,
+        removal_policy: RemovalPolicy,
+    ) -> dynamodb.Table:
+        """Create the company cache DynamoDB table for newsletter contributor affiliations."""
+        return dynamodb.Table(
+            self, "OscarCompanyCacheTable",
+            table_name=table_name,
+            partition_key=dynamodb.Attribute(
+                name="github_username",
+                type=dynamodb.AttributeType.STRING
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=removal_policy,
+            encryption=dynamodb.TableEncryption.AWS_MANAGED,
+            deletion_protection=removal_policy == RemovalPolicy.RETAIN,
         )
 
     def _create_context_monitoring(self, environment: str) -> None:

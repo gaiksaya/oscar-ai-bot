@@ -1,0 +1,88 @@
+# {{ month }}
+
+## 💥 What's new?
+* _placeholder — add releases, product launches, notable RFCs_
+{% if new_repositories %}
+* New repositories under OpenSearch-Project:
+{% for r in new_repositories %}
+  * [{{ r.name }}]({{ r.issue_url }})
+{% endfor %}
+{% endif %}
+{% if new_maintainers %}
+* New maintainers added this month:
+
+| GitHub Handle | Repository | Affiliation |
+|---|---|---|
+{% for m in new_maintainers %}
+| {{ m.github_handle }} | {{ m.repository }} | {{ m.affiliation }} |
+{% endfor %}
+{% endif %}
+
+## 🎉 Wins
+* _placeholder — human input_
+
+## Misses
+* _placeholder — human input_
+
+## Contribution Metrics:
+{% if contribution_metrics.by_company %}
+
+| # | Organization | Contributors | Repositories | Activity Metrics | PR Summary |
+|---|---|---|---|---|---|
+{% for c in contribution_metrics.by_company %}
+| {{ loop.index }} | {{ c.company }} | {{ c.users | join('<br>') }} | {{ c.repos | join(', ') }} | {% for k, v in c.activity_breakdown.items() %}{{ k }}: {{ v }}{% if not loop.last %}<br>{% endif %}{% endfor %} | {{ c.total_prs }} PRs (+{{ c.additions }}/-{{ c.deletions }}) |
+{% endfor %}
+{% endif %}
+{% if contribution_metrics.top_3_contributors %}
+
+**Top 3 contributors:**
+
+| # | GitHub handle | PR count | Affiliation |
+|---|---|---|---|
+{% for c in contribution_metrics.top_3_contributors %}
+| {{ loop.index }} | {{ c.username }} | {{ c.pr_count }} | {{ c.company }} |
+{% endfor %}
+{% endif %}
+{% if contribution_metrics.top_3_repos %}
+
+**Top 3 Repositories with contributions:**
+
+| # | Repository | Pull Requests |
+|---|---|---|
+{% for r in contribution_metrics.top_3_repos %}
+| {{ loop.index }} | {{ r.repository }} | {{ r.pr_count }} |
+{% endfor %}
+{% endif %}
+{% if contribution_metrics.unknown_company_users %}
+
+_Users without company affiliation ({{ contribution_metrics.unknown_company_users | length }}):_ {{ contribution_metrics.unknown_company_users[:20] | join(', ') }}
+{% endif %}
+
+## 📊 Health and Metrics:
+
+### Pull Requests Metrics:
+PR count {% if health_metrics.pr_change_percent > 0 %}increased{% elif health_metrics.pr_change_percent < 0 %}decreased{% else %}unchanged{% endif %} by **{{ health_metrics.pr_change_percent | abs }}%** compared to last month ({{ health_metrics.pr_count_previous }} → {{ health_metrics.pr_count_current }}).
+{% if health_metrics.stale_prs %}
+
+**Top 5 Repositories with stale PRs (not updated in past 2 months):**
+
+| Repository | Count |
+|---|---|
+{% for s in health_metrics.stale_prs %}
+| {{ s.repository }} | {{ s.count }} |
+{% endfor %}
+{% endif %}
+{% if health_metrics.untriaged_issues %}
+
+### Issues Metrics:
+**Top 5 Repositories with high untriaged issue count older than 2 weeks:**
+
+| Repository | Issue Count |
+|---|---|
+{% for u in health_metrics.untriaged_issues %}
+| {{ u.repository }} | {{ u.count }} |
+{% endfor %}
+{% endif %}
+
+## 🥳 Upcoming Events:
+Please see OpenSearch [events calendar](https://opensearch.org/events/) for upcoming events.

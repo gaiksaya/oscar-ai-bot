@@ -30,6 +30,7 @@ class OscarLambdaStack(Stack):
 
     SUPERVISOR_AGENT_LAMBDA_FUNCTION_NAME = 'oscar-supervisor-agent'
     COMMUNICATION_HANDLER_LAMBDA_FUNCTION_NAME = 'oscar-communication-handler'
+    NEWSLETTER_HANDLER_LAMBDA_FUNCTION_NAME = 'oscar-newsletter-handler'
 
     @classmethod
     def get_supervisor_agent_function_name(cls, env: str) -> str:
@@ -38,6 +39,10 @@ class OscarLambdaStack(Stack):
     @classmethod
     def get_communication_handler_lambda_function_name(cls, env: str) -> str:
         return f"{cls.COMMUNICATION_HANDLER_LAMBDA_FUNCTION_NAME}-{env}"
+
+    @classmethod
+    def get_newsletter_handler_lambda_function_name(cls, env: str) -> str:
+        return f"{cls.NEWSLETTER_HANDLER_LAMBDA_FUNCTION_NAME}-{env}"
 
     def __init__(
         self,
@@ -58,12 +63,14 @@ class OscarLambdaStack(Stack):
         self.secrets_stack = secrets_stack
         self.vpc_stack = vpc_stack
         self.env_name = environment
+        self.agents = agents or []
 
         self.lambda_functions: Dict[str, PythonFunction] = {}
 
         # Core lambdas
         self._create_supervisor_agent_lambda()
         self._create_communication_handler_lambda()
+        self._create_newsletter_handler_lambda()
 
         # Agent lambdas
         if agents:
@@ -127,6 +134,32 @@ class OscarLambdaStack(Stack):
             source_account=self.account,
         )
         self.lambda_functions[self.get_communication_handler_lambda_function_name(self.env_name)] = function
+
+    def _create_newsletter_handler_lambda(self) -> None:
+        execution_role = self.permissions_stack.lambda_execution_roles["newsletter"]
+        self.secrets_stack.grant_read_access(execution_role)
+
+        function = PythonFunction(
+            self, "NewsletterHandlerLambda",
+            function_name=self.get_newsletter_handler_lambda_function_name(self.env_name),
+            runtime=aws_lambda.Runtime.PYTHON_3_12,
+            handler="lambda_handler",
+            entry="lambda/oscar-newsletter-handler",
+            index="lambda_function.py",
+            timeout=Duration.seconds(900),
+            memory_size=1024,
+            environment=self._get_newsletter_handler_environment_variables(),
+            role=execution_role,
+            description="Newsletter handler for OSCAR supervisor-level action group",
+            reserved_concurrent_executions=5,
+        )
+        function.add_permission(
+            "AllowBedrockInvoke",
+            principal=iam.ServicePrincipal("bedrock.amazonaws.com"),
+            action="lambda:InvokeFunction",
+            source_account=self.account,
+        )
+        self.lambda_functions[self.get_newsletter_handler_lambda_function_name(self.env_name)] = function
 
     # ------------------------------------------------------------ agents
     def _create_agent_lambdas(self, agents) -> None:
@@ -233,3 +266,14 @@ class OscarLambdaStack(Stack):
             "CONTEXT_TABLE_NAME": self.storage_stack.context_table_name,
         })
         return env
+
+    def _get_newsletter_handler_environment_variables(self) -> Dict[str, str]:
+        params = get_ssm_param_paths(self.env_name, self.agents)
+        return {
+            "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
+            "COMPANY_TABLE_NAME": self.storage_stack.get_company_cache_table_name(self.env_name),
+            "METRICS_AGENT_ID_PARAM_PATH": params.get("metrics_agent_id", f"/oscar/{self.env_name}/bedrock/metrics-agent-id"),
+            "METRICS_AGENT_ALIAS_PARAM_PATH": params.get("metrics_agent_alias", f"/oscar/{self.env_name}/bedrock/metrics-agent-alias"),
+            "DEFAULT_PIPELINE": os.environ.get("OSCAR_NEWSLETTER_PIPELINE", "oscar-flow-agentic-pipeline"),
+            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "INFO"),
+        }

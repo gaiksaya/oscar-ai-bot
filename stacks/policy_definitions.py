@@ -265,6 +265,58 @@ class OscarPolicyDefinitions:
             )
         ]
 
+    def get_newsletter_handler_policies(self) -> List[iam.PolicyStatement]:
+        """Policies for the newsletter handler Lambda."""
+        return [
+            # SSM read for Metrics Agent ID/Alias parameter paths
+            iam.PolicyStatement(
+                sid="NewsletterSsmReadAccess",
+                effect=iam.Effect.ALLOW,
+                actions=["ssm:GetParameter"],
+                resources=[
+                    f"arn:aws:ssm:{self.region}:{self.account_id}:parameter/oscar/{self.env_name}/bedrock/*",
+                ],
+            ),
+            # Invoke Metrics Agent via Bedrock
+            iam.PolicyStatement(
+                sid="NewsletterInvokeMetricsAgent",
+                effect=iam.Effect.ALLOW,
+                actions=["bedrock:InvokeAgent"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent/*",
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent-alias/*/*",
+                ],
+            ),
+            # DynamoDB read for company cache
+            iam.PolicyStatement(
+                sid="NewsletterCompanyCacheRead",
+                effect=iam.Effect.ALLOW,
+                actions=["dynamodb:BatchGetItem", "dynamodb:GetItem"],
+                resources=[
+                    f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/{OscarStorageStack.get_company_cache_table_name(self.env_name)}",
+                ],
+            ),
+            # Secrets Manager read for Slack bot token and channel allowlist
+            iam.PolicyStatement(
+                sid="NewsletterSlackSecretsAccess",
+                effect=iam.Effect.ALLOW,
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:{OscarSecretsStack.get_central_env_secret_name(self.env_name)}*",
+                ],
+            ),
+            # Self-invoke (Event / fire-and-forget) so the sync path can dispatch
+            # an async worker and return fast.
+            iam.PolicyStatement(
+                sid="NewsletterSelfInvoke",
+                effect=iam.Effect.ALLOW,
+                actions=["lambda:InvokeFunction"],
+                resources=[
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:{OscarLambdaStack.get_newsletter_handler_lambda_function_name(self.env_name)}",
+                ],
+            ),
+        ]
+
     def get_api_gateway_policies(self) -> List[iam.PolicyStatement]:
         """
         Get policies for API Gateway.

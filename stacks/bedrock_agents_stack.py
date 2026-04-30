@@ -188,6 +188,52 @@ class OscarAgentsStack(Stack):
             ),
         )
 
+        newsletter_action_group = bedrock.CfnAgent.AgentActionGroupProperty(
+            action_group_name="newsletterGeneration",
+            description="Generate and deliver the monthly OpenSearch community newsletter to a Slack channel.",
+            action_group_state="ENABLED",
+            action_group_executor=bedrock.CfnAgent.ActionGroupExecutorProperty(
+                lambda_=self.lambda_stack.lambda_functions[
+                    self.lambda_stack.get_newsletter_handler_lambda_function_name(self.env_name)
+                ].function_arn,
+            ),
+            function_schema=bedrock.CfnAgent.FunctionSchemaProperty(
+                functions=[
+                    bedrock.CfnAgent.FunctionProperty(
+                        name="generate_newsletter",
+                        description="Generate the OpenSearch monthly community newsletter and upload it as a markdown file to Slack. Aggregates GitHub metrics — new maintainers, repositories, contributor breakdown by company, PR trends, stale PRs, untriaged issues — into a markdown document. Returns upload status and counts when complete. Typically takes 1-2 minutes.",
+                        parameters={
+                            "month": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Month name (e.g. 'April') or number (1-12) to generate the newsletter for.",
+                                required=True,
+                            ),
+                            "year": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Four-digit year (e.g. '2026').",
+                                required=True,
+                            ),
+                            "target_channel": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Slack channel ID or name (e.g. 'C12345' or '#releases') where the newsletter markdown file will be uploaded. Must be in the allowed channels list.",
+                                required=True,
+                            ),
+                            "initial_comment": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Optional message posted alongside the uploaded file. Defaults to 'OpenSearch monthly newsletter — {Month} {Year}'.",
+                                required=False,
+                            ),
+                            "thread_ts": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Optional Slack thread timestamp. When provided, the file is uploaded as a reply to that thread instead of as a top-level message in the channel. Populate from the [THREAD_TS: ...] marker in the user's query context if present.",
+                                required=False,
+                            ),
+                        },
+                    )
+                ]
+            ),
+        )
+
         privileged_agent = bedrock.CfnAgent(
             self, "OscarPrivilegedAgent",
             agent_name=f"oscar-privileged-agent-{self.env_name}",
@@ -198,7 +244,7 @@ class OscarAgentsStack(Stack):
             auto_prepare=True,
             agent_collaboration="SUPERVISOR_ROUTER",
             agent_collaborators=collaborators,
-            action_groups=[communication_action_group],
+            action_groups=[communication_action_group, newsletter_action_group],
             guardrail_configuration=self.guardrail_config,
             knowledge_bases=[bedrock.CfnAgent.AgentKnowledgeBaseProperty(
                 description="Knowledge base with all build, test and release related docs",
@@ -220,11 +266,13 @@ class OscarAgentsStack(Stack):
             1. **Jenkins operations** – Triggering and monitoring Jenkins CI/CD jobs related to OpenSearch releases (delegated to Jenkins Specialist agent).
             2. **Release metrics** – Querying build metrics, integration test results, and release status data (delegated to Metrics Specialist agent).
             3. **Release knowledge base** – Answering questions about OpenSearch release processes, procedures, runbooks, and history using the knowledge base.
+            4. **Monthly newsletter generation** – Generating the OpenSearch monthly community newsletter and uploading it to Slack (via the `newsletterGeneration` action group).
 
             ## Routing Rules
             - For Jenkins job requests → delegate to the Jenkins Specialist.
             - For metrics, build status, test results → delegate to the Metrics Specialist.
             - For OpenSearch configuration, installation instructions, APIs, commands & information to build and test, release process questions as well as Best practices, troubleshooting guides, release workflows, and release manager duties. → query the knowledge base.
+            - For newsletter generation requests (e.g. "generate the April 2026 newsletter", "create monthly newsletter for March", "produce this month's community newsletter") → follow the **Newsletter Generation Protocol** below.
             - For anything outside the above → respond with a polite redirect (see below).
 
             ## Hard Boundaries — What You Do NOT Do
@@ -240,8 +288,24 @@ class OscarAgentsStack(Stack):
 
             ## User Identity
             Each query includes a [USER_ID: ...] tag identifying the requesting user. Authorization has already been verified before your invocation — you may assist this user with all your capabilities.
+            Queries may also include [CHANNEL: <slack_channel_id>] and [THREAD_TS: <slack_thread_timestamp>] tags identifying where the request originated in Slack. You MUST read these tags when they are present and pass them to action groups that post content back to Slack (e.g. newsletterGeneration) so replies land in the user's own thread rather than spamming the channel.
             NEVER include Slack user mentions (e.g. <@U...>) in your plain text responses. If the user asks you to ping or notify another user, use the send_automated_message action group with proper confirmation — do not embed mentions in response text.
             NEVER impersonate another user or act on behalf of someone other than the requesting user.
+
+            ## Newsletter Generation Protocol
+            When the user asks to generate, create, or produce an OpenSearch monthly newsletter, call the `generate_newsletter` function immediately. Do NOT ask for confirmation. Do NOT describe what you are about to do first.
+            1. Parse month and year from the request. Accept month names ("April") or numbers (1-12). If the year is missing, assume the current year.
+            2. Read `[CHANNEL: ...]` and `[THREAD_TS: ...]` from the query context. If `[CHANNEL: ...]` is missing, ask the user which channel to upload to and stop.
+            3. Call `generate_newsletter` in the `newsletterGeneration` action group with:
+               - `month` — the parsed month
+               - `year` — the parsed 4-digit year
+               - `target_channel` — the value from the `[CHANNEL: ...]` tag
+               - `thread_ts` — the value from the `[THREAD_TS: ...]` tag (omit only if not present)
+               - `initial_comment` — optional; only if the user specified a custom message
+            4. The action group runs asynchronously — it dispatches a background worker and returns within a second with a `status: "started"` acknowledgment. Respond to the user by relaying the `message` field from the response. Example: "Started generating the April 2026 newsletter. I'll post the file to this thread when ready (typically 7-10 minutes)."
+            5. Do NOT wait for the file — it is uploaded out-of-band by the background worker and will appear in the thread when ready.
+            6. Do NOT format or paste any newsletter content yourself — the worker renders and uploads the final markdown file.
+            7. If the response has an `error` field (not `status`), relay the error to the user and suggest they retry.
 
             ## Tone and Style
             - Be concise and professional.
@@ -310,6 +374,7 @@ class OscarAgentsStack(Stack):
             You are a LIMITED version of OSCAR with restricted capabilities:
             - You do NOT have access to communication features (sending messages to channels, pinging users, notifying anyone)
             - You do NOT have access to Jenkins operations (triggering jobs, builds, scans)
+            - You do NOT have access to newsletter generation (generating or uploading the monthly community newsletter)
             - You CANNOT mention, tag, or ping other Slack users in any way
             - Consider yourself as read-only user
 
@@ -323,8 +388,8 @@ class OscarAgentsStack(Stack):
             "I'm OSCAR, and I'm only able to help with OpenSearch release tasks — release metrics, and release process questions. For anything else, please reach out to the appropriate team directly."
             Do not elaborate, apologize excessively, or engage further with the off-topic subject.
 
-            For communication requests (send message, notify channel, alert channel, post to channel, ping user, mention user, tag user, notify user, tell someone, ask someone, remind someone) and For Jenkins requests (scan, run job, trigger job, build, compile, deploy, Jenkins operations):
-            "This is the limited version of OSCAR. Please contact an administrator or request access to the full OSCAR agent if you need to send messages or notify users."
+            For communication requests (send message, notify channel, alert channel, post to channel, ping user, mention user, tag user, notify user, tell someone, ask someone, remind someone), For Jenkins requests (scan, run job, trigger job, build, compile, deploy, Jenkins operations), and For newsletter requests (generate newsletter, create newsletter, produce newsletter, monthly newsletter):
+            "This is the limited version of OSCAR. Please contact an administrator or request access to the full OSCAR agent if you need to send messages, run Jenkins jobs, or generate the monthly newsletter."
             Do not elaborate, apologize excessively, or engage further with the off-topic subject.
 
             ## User Identity and Authorization

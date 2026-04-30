@@ -47,9 +47,15 @@ class MessageProcessor:
         query = re.sub(config.patterns['mention'], '', text).strip()
         return query
 
-    def add_user_context_to_query(self, query: str, user_id: str) -> str:
-        """Add user context to query for sensitive operations."""
-        return f"[USER_ID: {user_id}] {query}"
+    def add_user_context_to_query(self, query: str, user_id: str,
+                                  channel: str = "", thread_ts: str = "") -> str:
+        """Add user and Slack thread context to query for sensitive operations."""
+        parts = [f"[USER_ID: {user_id}]"]
+        if channel:
+            parts.append(f"[CHANNEL: {channel}]")
+        if thread_ts:
+            parts.append(f"[THREAD_TS: {thread_ts}]")
+        return f"{' '.join(parts)} {query}"
 
     def _handle_confirmation_detection(self, response: str, channel: str, thread_ts: str) -> str:
         """Handle confirmation detection and warning reaction management.
@@ -141,7 +147,7 @@ class MessageProcessor:
                 return
 
             # ALWAYS add user context to query for agent to use as needed
-            query = self.add_user_context_to_query(query, user_id)
+            query = self.add_user_context_to_query(query, user_id, channel=channel, thread_ts=thread_ts)
             logger.info(f"Added user context to query: {query}")
             logger.info(f"Processing automated message sending request from authorized user {user_id}")
             # Continue with normal agent processing - agent will handle message sending via action group

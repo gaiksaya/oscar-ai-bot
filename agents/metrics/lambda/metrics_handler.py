@@ -189,3 +189,81 @@ def handle_metrics_query(params: Dict[str, Any], request_id: Optional[str] = Non
     except Exception as e:
         logger.error(f"METRICS_QUERY [{req_id}]: Unexpected error: {e}")
         return {'error': str(e), 'type': 'metrics_error'}
+
+
+DEFAULT_AGENTIC_PIPELINE = "oscar-flow-agentic-pipeline"
+
+
+def handle_agentic_query(params: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:
+    """Direct agentic query handler for a specific index using a flow agent pipeline.
+
+    Stateless one-shot NL-to-DSL translation — no memory_id, no conversational context.
+    The caller specifies the exact index and pipeline.
+
+    Args:
+        params: Parameters containing:
+            - query: Natural language query (required)
+            - index: OpenSearch index name (required)
+            - pipeline: Search pipeline name (optional, defaults to oscar-flow-agentic-pipeline)
+        request_id: Optional request ID for logging
+
+    Returns:
+        Dictionary containing raw hits, aggregations, and metadata
+    """
+    req_id = request_id or "unknown"
+
+    try:
+        logger.info(f"AGENTIC_QUERY [{req_id}]: Starting direct agentic query")
+
+        query = params.get('query')
+        index = params.get('index')
+        pipeline = params.get('pipeline') or DEFAULT_AGENTIC_PIPELINE
+
+        if not query:
+            return {'error': 'Query is required'}
+        if not index:
+            return {'error': 'Index is required'}
+
+        logger.info(f"AGENTIC_QUERY [{req_id}]: query='{query}', index={index}, pipeline={pipeline}")
+
+        try:
+            opensearch_results = agentic_search(pipeline, query, index=index)
+            logger.info(f"AGENTIC_QUERY [{req_id}]: Search completed")
+        except AgenticSearchError as e:
+            logger.error(f"AGENTIC_SEARCH_FAILED [{req_id}]: {e}")
+            return {
+                'error': str(e),
+                'status_code': e.status_code,
+                'type': 'agentic_search_error',
+                'retryable': False,
+                'message': 'The search agent could not generate a valid query. '
+                           'Try rephrasing or simplifying the question. Do not retry this exact query.'
+            }
+
+        # Extract hits and aggregations
+        hits = opensearch_results.get('hits', {})
+        raw_hits = hits.get('hits', [])
+        total = hits.get('total', {}).get('value', 0)
+        aggregations = opensearch_results.get('aggregations', {})
+
+        generated_dsl = opensearch_results.get('ext', {}).get('dsl_query')
+        if generated_dsl:
+            logger.info(f"AGENTIC_QUERY [{req_id}]: Generated DSL: {generated_dsl}")
+
+        # Return raw results — let the caller handle processing
+        response = {
+            'index': index,
+            'total_hits': total,
+            'results': [hit.get('_source', {}) for hit in raw_hits],
+            'aggregations': aggregations,
+        }
+
+        if generated_dsl:
+            response['generated_dsl'] = generated_dsl
+
+        logger.info(f"AGENTIC_QUERY [{req_id}]: Returning {len(raw_hits)} hits, {len(aggregations)} aggregations")
+        return response
+
+    except Exception as e:
+        logger.error(f"AGENTIC_QUERY [{req_id}]: Unexpected error: {e}")
+        return {'error': str(e), 'type': 'agentic_query_error'}

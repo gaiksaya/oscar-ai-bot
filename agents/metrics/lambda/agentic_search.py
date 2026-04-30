@@ -80,17 +80,18 @@ def enhance_query(query: str, version: str, filters: Optional[Dict[str, Any]] = 
     return enhanced
 
 
-def agentic_search(pipeline: str, query_text: str, memory_id: Optional[str] = None) -> Dict[str, Any]:
+def agentic_search(pipeline: str, query_text: str, memory_id: Optional[str] = None, index: Optional[str] = None) -> Dict[str, Any]:
     """Send agentic search request to OpenSearch.
 
-    Sends a GET to /_search?search_pipeline={pipeline} with the agentic
-    query body. The conversational agent handles index routing internally,
-    so no index name is needed in the request path.
+    Sends a GET to /_search or /{index}/_search with the specified pipeline.
+    When index is provided, targets that specific index (flow agent mode).
+    When index is omitted, the conversational agent handles index routing.
 
     Args:
         pipeline: Agentic pipeline name (e.g., 'metrics-agentic-pipeline')
         query_text: Enhanced natural language query
         memory_id: Optional memory ID for conversational context continuity
+        index: Optional index name for direct index targeting
 
     Returns:
         Raw OpenSearch response dict
@@ -100,7 +101,11 @@ def agentic_search(pipeline: str, query_text: str, memory_id: Optional[str] = No
     """
     from aws_utils import opensearch_request
 
-    path = f'/_search?search_pipeline={pipeline}'
+    if index:
+        path = f'/{index}/_search?search_pipeline={pipeline}'
+    else:
+        path = f'/_search?search_pipeline={pipeline}'
+
     body = {
         "query": {
             "agentic": {

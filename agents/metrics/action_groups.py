@@ -40,5 +40,41 @@ def get_action_groups(lambda_arn: str) -> List[bedrock.CfnAgent.AgentActionGroup
                     ),
                 ]
             ),
-        )
+        ),
+        bedrock.CfnAgent.AgentActionGroupProperty(
+            action_group_name="agenticSearchActionGroup",
+            description="Direct agentic search against any OpenSearch index using a flow agent pipeline for NL-to-DSL translation",
+            action_group_state="ENABLED",
+            action_group_executor=bedrock.CfnAgent.ActionGroupExecutorProperty(lambda_=lambda_arn),
+            function_schema=bedrock.CfnAgent.FunctionSchemaProperty(
+                functions=[
+                    bedrock.CfnAgent.FunctionProperty(
+                        name="agentic_query",
+                        description="Execute a natural language query against a specific OpenSearch index. The query is translated to DSL by a flow agent pipeline. Use this for GitHub data (issues, PRs, activity events) or any index where you know the exact index name.",
+                        parameters={
+                            "query": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Natural language query (e.g., 'Show all closed issues with label github-request and maintainer in title for April 2026')",
+                                required=True,
+                            ),
+                            "index": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="OpenSearch index name to query (e.g., 'github_issues', 'github_pulls', 'github-user-activity-events-04-2026')",
+                                required=True,
+                            ),
+                            "pipeline": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="Search pipeline name for NL-to-DSL translation. Defaults to 'oscar-flow-agentic-pipeline' if not specified.",
+                                required=False,
+                            ),
+                            "return_raw": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="boolean",
+                                description="When true, the agent MUST return the complete raw OpenSearch JSON response verbatim, without any natural-language summarization, commentary, or truncation. Use this when a machine caller (e.g., the newsletter handler) needs to parse hits and aggregations directly. Default: false (agent returns a human-readable summary).",
+                                required=False,
+                            ),
+                        },
+                    ),
+                ]
+            ),
+        ),
     ]

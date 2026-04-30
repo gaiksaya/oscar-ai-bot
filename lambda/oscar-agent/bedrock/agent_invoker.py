@@ -15,6 +15,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 import boto3
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from config import config
 
@@ -32,7 +33,18 @@ class BedrockAgentCore:
             region: AWS region for Bedrock service, defaults to config value
         """
         self.region = region or config.region
-        self.client = boto3.client('bedrock-agent-runtime', region_name=self.region)
+        # Long-running action groups (e.g. newsletter generation) can stream
+        # responses for several minutes. Bump the default 60s read_timeout so
+        # boto3 doesn't drop the connection mid-stream.
+        self.client = boto3.client(
+            'bedrock-agent-runtime',
+            region_name=self.region,
+            config=BotoConfig(
+                read_timeout=900,
+                connect_timeout=10,
+                retries={'max_attempts': 1, 'mode': 'standard'},
+            ),
+        )
 
         # Privileged supervisor agent configuration (current full-featured agent)
         self.privileged_agent_id = config.oscar_privileged_bedrock_agent_id
