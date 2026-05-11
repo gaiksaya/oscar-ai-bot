@@ -186,9 +186,7 @@ def _lambda_handler_sync(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "year": year,
         "target_channel": target_channel,
         "message": (
-            f"Newsletter generation for {month} {year} has started. "
-            "The .md file will be posted to this thread when ready "
-            "(typically 7-10 minutes)."
+            f"Generating {month} {year} newsletter now!"
         ),
     })
 

@@ -17,10 +17,12 @@ Functions:
     handle_metrics_query: Main metrics query handler using agentic search
 """
 
+import json
 import logging
 from typing import Any, Dict, Optional
 
 from agentic_search import AgenticSearchError, agentic_search, enhance_query
+from aws_utils import opensearch_request
 from config import config
 from data_processors import (extract_build_results, extract_release_results,
                              extract_test_results)
@@ -267,3 +269,80 @@ def handle_agentic_query(params: Dict[str, Any], request_id: Optional[str] = Non
     except Exception as e:
         logger.error(f"AGENTIC_QUERY [{req_id}]: Unexpected error: {e}")
         return {'error': str(e), 'type': 'agentic_query_error'}
+
+
+
+def handle_direct_query(params: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:
+    """Execute an explicit DSL query directly against OpenSearch.
+
+    Bypasses any NL-to-DSL translation. The caller provides the exact DSL;
+    this handler sends the cross-account signed request and returns the raw
+    OpenSearch JSON response.
+
+    Args:
+        params: Parameters containing:
+            - index: OpenSearch index name (required, accepts comma-lists/wildcards)
+            - query_body: OpenSearch query DSL as a JSON string (required)
+        request_id: Optional request ID for logging
+
+    Returns:
+        Raw OpenSearch response JSON, or an error dict with 'error' and 'type' keys.
+    """
+    req_id = request_id or "unknown"
+
+    try:
+        logger.info(f"DIRECT_QUERY [{req_id}]: Starting direct DSL query")
+
+        index = params.get('index')
+        query_body_in = params.get('query_body')
+
+        if not index:
+            return {'error': 'index is required', 'type': 'direct_query_error'}
+        if not query_body_in:
+            return {'error': 'query_body is required', 'type': 'direct_query_error'}
+
+        # Bedrock action-group parameters arrive as strings; handler callers may
+        # pass pre-parsed dicts.
+        if isinstance(query_body_in, str):
+            try:
+                query_body = json.loads(query_body_in)
+            except json.JSONDecodeError as e:
+                logger.error(f"DIRECT_QUERY [{req_id}]: Invalid JSON in query_body: {e}")
+                return {
+                    'error': f'query_body is not valid JSON: {e}',
+                    'type': 'direct_query_error',
+                }
+        elif isinstance(query_body_in, dict):
+            query_body = query_body_in
+        else:
+            return {
+                'error': f'query_body must be a JSON string or dict, got {type(query_body_in).__name__}',
+                'type': 'direct_query_error',
+            }
+
+        logger.info(
+            f"DIRECT_QUERY [{req_id}]: index={index}, body_keys={list(query_body.keys())}"
+        )
+
+        path = f"/{index}/_search"
+        try:
+            response = opensearch_request('POST', path, body=query_body)
+        except Exception as e:
+            logger.error(f"DIRECT_QUERY [{req_id}]: OpenSearch request failed: {e}")
+            return {
+                'error': str(e),
+                'type': 'opensearch_request_error',
+                'retryable': False,
+            }
+
+        hits_total = response.get('hits', {}).get('total', {}).get('value')
+        agg_keys = list(response.get('aggregations', {}).keys()) if 'aggregations' in response else []
+        logger.info(
+            f"DIRECT_QUERY [{req_id}]: Returning hits_total={hits_total}, "
+            f"aggregation_keys={agg_keys}"
+        )
+        return response
+
+    except Exception as e:
+        logger.error(f"DIRECT_QUERY [{req_id}]: Unexpected error: {e}")
+        return {'error': str(e), 'type': 'direct_query_error'}

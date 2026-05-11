@@ -268,23 +268,15 @@ class OscarPolicyDefinitions:
     def get_newsletter_handler_policies(self) -> List[iam.PolicyStatement]:
         """Policies for the newsletter handler Lambda."""
         return [
-            # SSM read for Metrics Agent ID/Alias parameter paths
+            # Invoke the Metrics Lambda's direct_query handler for OpenSearch
+            # queries. Scoped to the specific function name so we don't grant
+            # broad lambda:Invoke across the account.
             iam.PolicyStatement(
-                sid="NewsletterSsmReadAccess",
+                sid="NewsletterInvokeMetricsLambda",
                 effect=iam.Effect.ALLOW,
-                actions=["ssm:GetParameter"],
+                actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:ssm:{self.region}:{self.account_id}:parameter/oscar/{self.env_name}/bedrock/*",
-                ],
-            ),
-            # Invoke Metrics Agent via Bedrock
-            iam.PolicyStatement(
-                sid="NewsletterInvokeMetricsAgent",
-                effect=iam.Effect.ALLOW,
-                actions=["bedrock:InvokeAgent"],
-                resources=[
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent/*",
-                    f"arn:aws:bedrock:{self.region}:{self.account_id}:agent-alias/*/*",
+                    f"arn:aws:lambda:{self.region}:{self.account_id}:function:oscar-metrics-{self.env_name}",
                 ],
             ),
             # DynamoDB read for company cache
@@ -313,6 +305,21 @@ class OscarPolicyDefinitions:
                 actions=["lambda:InvokeFunction"],
                 resources=[
                     f"arn:aws:lambda:{self.region}:{self.account_id}:function:{OscarLambdaStack.get_newsletter_handler_lambda_function_name(self.env_name)}",
+                ],
+            ),
+            # Bedrock InvokeModel (any Anthropic model) for per-company contribution narratives.
+            # When using a cross-region inference profile (e.g. us.anthropic.*),
+            # the caller needs access to BOTH the inference profile AND the
+            # underlying foundation model in every region the profile routes to.
+            iam.PolicyStatement(
+                sid="NewsletterInvokeClaudeForNarratives",
+                effect=iam.Effect.ALLOW,
+                actions=["bedrock:InvokeModel"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.*",
+                    "arn:aws:bedrock:*::foundation-model/anthropic.*",
+                    f"arn:aws:bedrock:{self.region}:{self.account_id}:inference-profile/*",
+                    f"arn:aws:bedrock:*:{self.account_id}:inference-profile/*",
                 ],
             ),
         ]

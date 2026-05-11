@@ -27,10 +27,10 @@
 ## Contribution Metrics:
 {% if contribution_metrics.by_company %}
 
-| # | Organization | Contributors | Repositories | Activity Metrics | PR Summary |
-|---|---|---|---|---|---|
+| # | Organization | Contributors | Repositories | Activity Metrics | PR Summary | Pull Requests Contributions Overview |
+|---|---|---|---|---|---|---|
 {% for c in contribution_metrics.by_company %}
-| {{ loop.index }} | {{ c.company }} | {{ c.users | join('<br>') }} | {{ c.repos | join(', ') }} | {% for k, v in c.activity_breakdown.items() %}{{ k }}: {{ v }}{% if not loop.last %}<br>{% endif %}{% endfor %} | {{ c.total_prs }} PRs (+{{ c.additions }}/-{{ c.deletions }}) |
+| {{ loop.index }} | {{ c.company }} | {{ c.users | join('<br>') }} | {% for r in c.repos %}{{ r.repository }} ({{ r.count }}){% if not loop.last %}<br>{% endif %}{% endfor %} | {% for k, v in c.activity_breakdown.items() %}{{ k }}: {{ v }}{% if not loop.last %}<br>{% endif %}{% endfor %} | {{ c.pr_summary_text }} | {{ c.narrative }} |
 {% endfor %}
 {% endif %}
 {% if contribution_metrics.top_3_contributors %}
@@ -53,18 +53,16 @@
 | {{ loop.index }} | {{ r.repository }} | {{ r.pr_count }} |
 {% endfor %}
 {% endif %}
-{% if contribution_metrics.unknown_company_users %}
-
-_Users without company affiliation ({{ contribution_metrics.unknown_company_users | length }}):_ {{ contribution_metrics.unknown_company_users[:20] | join(', ') }}
-{% endif %}
 
 ## 📊 Health and Metrics:
+Below are the metrics of the overall opensearch-project repositories in terms of untriaged issues, GitHub issue stats and GitHub pull request stats for last 30 days.
 
 ### Pull Requests Metrics:
 PR count {% if health_metrics.pr_change_percent > 0 %}increased{% elif health_metrics.pr_change_percent < 0 %}decreased{% else %}unchanged{% endif %} by **{{ health_metrics.pr_change_percent | abs }}%** compared to last month ({{ health_metrics.pr_count_previous }} → {{ health_metrics.pr_count_current }}).
 {% if health_metrics.stale_prs %}
 
 **Top 5 Repositories with stale PRs (not updated in past 2 months):**
+_Action Item: Requesting the maintainers to please take appropriate action (review, ask for an update or close)._
 
 | Repository | Count |
 |---|---|
@@ -72,10 +70,16 @@ PR count {% if health_metrics.pr_change_percent > 0 %}increased{% elif health_me
 | {{ s.repository }} | {{ s.count }} |
 {% endfor %}
 {% endif %}
-{% if health_metrics.untriaged_issues %}
+{% if health_metrics.untriaged_issues or health_metrics.issue_count_current or health_metrics.issue_count_previous %}
 
 ### Issues Metrics:
+{% if health_metrics.issue_count_current or health_metrics.issue_count_previous %}
+Issues resolved {% if health_metrics.issue_change_percent > 0 %}increased{% elif health_metrics.issue_change_percent < 0 %}decreased{% else %}unchanged{% endif %} by **{{ health_metrics.issue_change_percent | abs }}%** compared to last month ({{ health_metrics.issue_count_previous }} → {{ health_metrics.issue_count_current }}).
+{% endif %}
+{% if health_metrics.untriaged_issues %}
+
 **Top 5 Repositories with high untriaged issue count older than 2 weeks:**
+_Action Item: Requesting the maintainers to please take a look and untriage issues._
 
 | Repository | Issue Count |
 |---|---|
@@ -83,6 +87,11 @@ PR count {% if health_metrics.pr_change_percent > 0 %}increased{% elif health_me
 | {{ u.repository }} | {{ u.count }} |
 {% endfor %}
 {% endif %}
+{% endif %}
 
 ## 🥳 Upcoming Events:
 Please see OpenSearch [events calendar](https://opensearch.org/events/) for upcoming events.
+
+---
+
+✍️ **Quick tip**: Want to contribute to this newsletter? Have a win to share, something new to announce, or a story worth telling? We'd love to hear from you! Submit your contribution [here](https://quip-amazon.com/B3SnAutFf2Wl/Monthly-Newsletter-OpenSource-OpenSearch-project).

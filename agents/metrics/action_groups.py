@@ -67,10 +67,31 @@ def get_action_groups(lambda_arn: str) -> List[bedrock.CfnAgent.AgentActionGroup
                                 description="Search pipeline name for NL-to-DSL translation. Defaults to 'oscar-flow-agentic-pipeline' if not specified.",
                                 required=False,
                             ),
-                            "return_raw": bedrock.CfnAgent.ParameterDetailProperty(
-                                type="boolean",
-                                description="When true, the agent MUST return the complete raw OpenSearch JSON response verbatim, without any natural-language summarization, commentary, or truncation. Use this when a machine caller (e.g., the newsletter handler) needs to parse hits and aggregations directly. Default: false (agent returns a human-readable summary).",
-                                required=False,
+                        },
+                    ),
+                ]
+            ),
+        ),
+        bedrock.CfnAgent.AgentActionGroupProperty(
+            action_group_name="directSearchActionGroup",
+            description="Execute explicit OpenSearch DSL queries directly against a specified index and return raw JSON. No NL-to-DSL translation. Use for deterministic or high-performance queries.",
+            action_group_state="ENABLED",
+            action_group_executor=bedrock.CfnAgent.ActionGroupExecutorProperty(lambda_=lambda_arn),
+            function_schema=bedrock.CfnAgent.FunctionSchemaProperty(
+                functions=[
+                    bedrock.CfnAgent.FunctionProperty(
+                        name="direct_query",
+                        description="Execute a raw OpenSearch DSL query against a specific index and return the full JSON response. No LLM translation, no summarization — the caller provides DSL, the Lambda returns JSON.",
+                        parameters={
+                            "index": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="OpenSearch index name to query (e.g., 'github_pulls', 'github_issues', 'github-user-activity-events-04-2026'). Also accepts comma-separated lists and wildcards.",
+                                required=True,
+                            ),
+                            "query_body": bedrock.CfnAgent.ParameterDetailProperty(
+                                type="string",
+                                description="The OpenSearch query DSL as a JSON string. Example: '{\"size\":0,\"query\":{\"bool\":{\"filter\":[{\"range\":{\"created_at\":{\"gte\":\"2026-04-01\",\"lt\":\"2026-05-01\"}}}]}},\"aggs\":{\"by_user\":{\"terms\":{\"field\":\"user_login.keyword\",\"size\":10000}}}}'",
+                                required=True,
                             ),
                         },
                     ),

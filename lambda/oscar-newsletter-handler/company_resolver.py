@@ -19,8 +19,19 @@ def normalize_company(name: str) -> str:
     stripped = name.strip()
     lower = stripped.lower()
 
-    # Catch all Amazon/AWS variants (e.g., "aws @opensearch-project", "Amazon Web Service")
-    if "amazon" in lower or "aws" in lower.split()[0:1]:
+    # Catch all Amazon/AWS variants, including:
+    #   "aws @opensearch-project", "Amazon Web Services", "aws, @opensearch-project",
+    #   "opensearch-project at @aws", "AWS-India", etc.
+    # Use substring match on both "amazon" and "aws" — known false positives
+    # like "awsome" are rare enough to accept.
+    if "amazon" in lower or "aws" in lower:
+        return "Amazon"
+
+    # Users with just "opensearch-project" or "@opensearch-project" as their
+    # "company" are typically Amazon employees who listed the GitHub org
+    # instead of an employer. Treat as Amazon.
+    cleaned = lower.lstrip("@").strip()
+    if cleaned in {"opensearch-project", "opensearch project"} or "opensearch-project" in cleaned:
         return "Amazon"
 
     for suffix in COMPANY_SUFFIXES_TO_STRIP:

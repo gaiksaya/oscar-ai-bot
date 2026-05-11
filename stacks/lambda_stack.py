@@ -268,12 +268,10 @@ class OscarLambdaStack(Stack):
         return env
 
     def _get_newsletter_handler_environment_variables(self) -> Dict[str, str]:
-        params = get_ssm_param_paths(self.env_name, self.agents)
         return {
             "CENTRAL_SECRET_NAME": self.secrets_stack.central_env_secret.secret_name,
             "COMPANY_TABLE_NAME": self.storage_stack.get_company_cache_table_name(self.env_name),
-            "METRICS_AGENT_ID_PARAM_PATH": params.get("metrics_agent_id", f"/oscar/{self.env_name}/bedrock/metrics-agent-id"),
-            "METRICS_AGENT_ALIAS_PARAM_PATH": params.get("metrics_agent_alias", f"/oscar/{self.env_name}/bedrock/metrics-agent-alias"),
-            "DEFAULT_PIPELINE": os.environ.get("OSCAR_NEWSLETTER_PIPELINE", "oscar-flow-agentic-pipeline"),
+            "METRICS_LAMBDA_FUNCTION_NAME": f"oscar-metrics-{self.env_name}",
+            "OSCAR_ENV": self.env_name,
             "LOG_LEVEL": os.environ.get("LOG_LEVEL", "INFO"),
         }

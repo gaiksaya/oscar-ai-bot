@@ -1,7 +1,15 @@
 # Copyright OpenSearch Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Data aggregation — merge PRs + activity events, group by company, compute metrics."""
+"""Data aggregation for newsletter data.
+
+All responses come from the Metrics Agent's `direct_query` function, which
+returns raw OpenSearch JSON. The aggregation shapes are KNOWN because we
+wrote the DSL ourselves (see data_collector._build_dsl_*).
+
+Returns strongly-typed dataclasses (see models.py) so callers get IDE
+completion, mypy checking, and self-documenting field names.
+"""
 
 import logging
 import re
@@ -9,6 +17,15 @@ from collections import defaultdict
 from typing import Any, Dict, List
 
 import company_resolver
+from models import (
+    CompanySummary,
+    HealthMetrics,
+    RepoContribution,
+    RepoCount,
+    TopContributor,
+    TopRepo,
+    UserPRStats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,42 +35,6 @@ _BACKPORT_PREFIX_RE = re.compile(
     r"^(?:\[Backport\]\s*\[[\d.x]+\]\s*|\[Backport\s+[\d.x]+\]\s*|Backport\s+)",
     re.IGNORECASE,
 )
-
-
-def _extract_buckets(result: Dict[str, Any], agg_name: str) -> List[Dict[str, Any]]:
-    """Extract aggregation buckets from an agentic_query response."""
-    if not result:
-        return []
-    aggs = result.get("aggregations", {})
-    agg = aggs.get(agg_name, {})
-    return agg.get("buckets", [])
-
-
-def _find_buckets(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Find the first aggregation buckets in the result."""
-    if not result:
-        logger.info("AGGREGATOR: _find_buckets — result is empty")
-        return []
-    if not isinstance(result, dict):
-        logger.warning(f"AGGREGATOR: _find_buckets — result is not a dict: {type(result).__name__}")
-        return []
-    aggs = result.get("aggregations", {})
-    if not aggs:
-        logger.info(
-            f"AGGREGATOR: _find_buckets — no 'aggregations' key; top-level keys={list(result.keys())}"
-        )
-        return []
-    for key, value in aggs.items():
-        if isinstance(value, dict) and "buckets" in value:
-            buckets = value["buckets"]
-            logger.info(
-                f"AGGREGATOR: _find_buckets — picked agg='{key}' with {len(buckets)} buckets"
-            )
-            return buckets
-    logger.info(
-        f"AGGREGATOR: _find_buckets — no nested buckets found; agg_keys={list(aggs.keys())}"
-    )
-    return []
 
 
 def deduplicate_pr_titles(titles: List[str]) -> List[str]:
@@ -71,106 +52,206 @@ def deduplicate_pr_titles(titles: List[str]) -> List[str]:
     return unique
 
 
+# ---------------------------------------------------------------------------
+# Internal bucket extractors — kept as module-level helpers because they're
+# used by both the aggregator and (via backdoor import) the processor.
+# ---------------------------------------------------------------------------
+
+def _pr_user_buckets(pr_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the `by_user_login` buckets from pr_data response."""
+    aggs = pr_data.get("aggregations") or {}
+    return (aggs.get("by_user_login") or {}).get("buckets") or []
+
+
+def _activity_sender_buckets(activity_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the `by_sender` buckets from activity_events response."""
+    aggs = activity_data.get("aggregations") or {}
+    return (aggs.get("by_sender") or {}).get("buckets") or []
+
+
+def _repo_buckets(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the `by_repository` buckets from stale_prs / untriaged_issues."""
+    aggs = result.get("aggregations") or {}
+    return (aggs.get("by_repository") or {}).get("buckets") or []
+
+
+# ---------------------------------------------------------------------------
+# Per-user stats derived from pr_data
+# ---------------------------------------------------------------------------
+
+def _build_user_pr_stats(pr_data: Dict[str, Any]) -> Dict[str, UserPRStats]:
+    """Return username -> UserPRStats.
+
+    Handles `by_merged` as `true`/`false` boolean buckets, `by_repository`
+    bucket keys, and `sample_titles` top_hits within each repo bucket.
+    """
+    stats: Dict[str, UserPRStats] = {}
+    for bucket in _pr_user_buckets(pr_data):
+        username = bucket.get("key") or ""
+        if not username or company_resolver.is_bot(username):
+            continue
+        count = bucket.get("doc_count", 0)
+
+        # by_merged — {buckets: [{key: 1 (true), doc_count: N}, {key: 0 (false), doc_count: M}]}
+        merged = 0
+        unmerged = 0
+        for mb in (bucket.get("by_merged") or {}).get("buckets", []):
+            k = mb.get("key")
+            is_true = (k == 1) or (k is True) or (str(mb.get("key_as_string", "")).lower() == "true")
+            if is_true:
+                merged += mb.get("doc_count", 0)
+            else:
+                unmerged += mb.get("doc_count", 0)
+
+        # by_repository — {buckets: [{key, doc_count, sample_titles: {hits: {hits: [{_source: {title}}]}}}, ...]}
+        repos: List[tuple] = []
+        pr_titles_by_repo: Dict[str, List[str]] = {}
+        for rb in (bucket.get("by_repository") or {}).get("buckets", []):
+            repo_name = rb.get("key", "")
+            if not repo_name:
+                continue
+            repos.append((repo_name, rb.get("doc_count", 0)))
+            hits = ((rb.get("sample_titles") or {}).get("hits") or {}).get("hits") or []
+            titles = [
+                h.get("_source", {}).get("title", "") for h in hits
+                if h.get("_source", {}).get("title")
+            ]
+            if titles:
+                pr_titles_by_repo[repo_name] = titles
+
+        additions = int(((bucket.get("total_additions") or {}).get("value") or 0))
+        deletions = int(((bucket.get("total_deletions") or {}).get("value") or 0))
+
+        stats[username] = UserPRStats(
+            pr_count=count,
+            merged=merged,
+            open=unmerged,  # non-merged includes open + closed-not-merged
+            additions=additions,
+            deletions=deletions,
+            repos=repos,
+            pr_titles_by_repo=pr_titles_by_repo,
+        )
+    logger.info(
+        f"AGGREGATOR: _build_user_pr_stats — {len(stats)} non-bot users "
+        f"(from {len(_pr_user_buckets(pr_data))} buckets)"
+    )
+    return stats
+
+
+def _build_user_activity(activity_data: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
+    """Return username -> {type: count, ...} from activity_events."""
+    per_user: Dict[str, Dict[str, int]] = {}
+    for bucket in _activity_sender_buckets(activity_data):
+        username = bucket.get("key") or ""
+        if not username or company_resolver.is_bot(username):
+            continue
+        breakdown: Dict[str, int] = defaultdict(int)
+        for tb in (bucket.get("by_type") or {}).get("buckets", []):
+            breakdown[tb.get("key", "unknown")] += tb.get("doc_count", 0)
+        if breakdown:
+            per_user[username] = dict(breakdown)
+    logger.info(
+        f"AGGREGATOR: _build_user_activity — {len(per_user)} non-bot users "
+        f"(from {len(_activity_sender_buckets(activity_data))} sender buckets)"
+    )
+    return per_user
+
+
+# ---------------------------------------------------------------------------
+# Public aggregation functions
+# ---------------------------------------------------------------------------
+
 def aggregate_contributors(
     pr_data: Dict[str, Any],
     activity_data: Dict[str, Any],
     companies: Dict[str, str],
-) -> List[Dict[str, Any]]:
-    """Group contributors by company with merged PR + activity data.
+) -> List[CompanySummary]:
+    """Group contributors by company and produce the rich per-company summary.
 
-    Users NOT in the `companies` dict are dropped entirely (this is how the
-    Amazon filter works — the resolver returns a companies dict without
-    filtered users, and we only keep users that are in it).
+    Users NOT in `companies` are dropped (that's how the Amazon filter works).
     """
-    logger.info("AGGREGATOR: aggregate_contributors — extracting PR buckets")
-    pr_buckets = _find_buckets(pr_data)
-    logger.info("AGGREGATOR: aggregate_contributors — extracting activity buckets")
-    activity_buckets = _find_buckets(activity_data)
-    logger.info(
-        f"AGGREGATOR: aggregate_contributors — pr_buckets={len(pr_buckets)}, "
-        f"activity_buckets={len(activity_buckets)}, known_companies={len(companies)}"
-    )
+    user_pr = _build_user_pr_stats(pr_data)
+    user_activity = _build_user_activity(activity_data)
 
-    user_stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
-        "pr_count": 0,
-        "additions": 0,
-        "deletions": 0,
-        "repos": set(),
-        "pr_titles": [],
-        "activity_breakdown": defaultdict(int),
-    })
-
-    for bucket in pr_buckets:
-        username = bucket.get("key", "")
-        if not username or company_resolver.is_bot(username):
-            continue
-        count = bucket.get("doc_count", 0)
-        user_stats[username]["pr_count"] += count
-
-        # Look for nested per-user aggregations
-        for key, value in bucket.items():
-            if not isinstance(value, dict):
-                continue
-            if "value" in value and isinstance(value["value"], (int, float)):
-                if key in ("additions", "total_additions"):
-                    user_stats[username]["additions"] += int(value["value"])
-                elif key in ("deletions", "total_deletions"):
-                    user_stats[username]["deletions"] += int(value["value"])
-
-    # Merge activity events
-    for bucket in activity_buckets:
-        username = bucket.get("key", "")
-        if not username or company_resolver.is_bot(username):
-            continue
-        if username not in user_stats:
-            continue
-        for key, value in bucket.items():
-            if isinstance(value, dict) and "buckets" in value:
-                for type_bucket in value["buckets"]:
-                    event_type = type_bucket.get("key", "unknown")
-                    count = type_bucket.get("doc_count", 0)
-                    user_stats[username]["activity_breakdown"][event_type] += count
-
-    # Group by company — only include users whose company we know
-    by_company: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+    # Accumulate per-company stats using plain dicts as scratch space; we
+    # convert to CompanySummary dataclasses at the end.
+    scratch: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
         "users": [],
         "total_prs": 0,
+        "merged": 0,
+        "open": 0,
         "additions": 0,
         "deletions": 0,
-        "repos": set(),
+        "repo_counts": defaultdict(int),
         "activity_breakdown": defaultdict(int),
-        "pr_titles": [],
+        "pr_titles_by_repo": defaultdict(list),
     })
 
-    for username, stats in user_stats.items():
+    for username, stats in user_pr.items():
         company = companies.get(username)
         if not company:
-            continue  # Unknown or filtered (e.g. Amazon) — skip
-        bucket = by_company[company]
-        bucket["users"].append(username)
-        bucket["total_prs"] += stats["pr_count"]
-        bucket["additions"] += stats["additions"]
-        bucket["deletions"] += stats["deletions"]
-        bucket["repos"].update(stats["repos"])
-        for event_type, count in stats["activity_breakdown"].items():
-            bucket["activity_breakdown"][event_type] += count
+            continue
+        s = scratch[company]
+        s["users"].append(username)
+        s["total_prs"] += stats.pr_count
+        s["merged"] += stats.merged
+        s["open"] += stats.open
+        s["additions"] += stats.additions
+        s["deletions"] += stats.deletions
+        for repo, rcount in stats.repos:
+            s["repo_counts"][repo] += rcount
+        for repo, titles in stats.pr_titles_by_repo.items():
+            s["pr_titles_by_repo"][repo].extend(titles)
 
-    result = []
-    for company, bucket in by_company.items():
-        result.append({
-            "company": company,
-            "users": sorted(bucket["users"]),
-            "total_prs": bucket["total_prs"],
-            "additions": bucket["additions"],
-            "deletions": bucket["deletions"],
-            "repos": sorted(bucket["repos"]),
-            "activity_breakdown": dict(bucket["activity_breakdown"]),
-            "pr_titles": deduplicate_pr_titles(bucket["pr_titles"]),
-        })
-    result.sort(key=lambda x: x["total_prs"], reverse=True)
+    for username, breakdown in user_activity.items():
+        company = companies.get(username)
+        if not company:
+            continue
+        s = scratch[company]
+        for event_type, count in breakdown.items():
+            s["activity_breakdown"][event_type] += count
+
+    result: List[CompanySummary] = []
+    for company, s in scratch.items():
+        top_repos = sorted(
+            s["repo_counts"].items(), key=lambda x: x[1], reverse=True
+        )[:5]
+        repos_list = [RepoContribution(repository=r, count=c) for r, c in top_repos]
+
+        repo_phrase = ", ".join(f"{r} ({c})" for r, c in top_repos) or "n/a"
+        pr_summary_text = (
+            f"{s['total_prs']} PRs "
+            f"({s['merged']} merged, {s['open']} open) "
+            f"across {repo_phrase}. "
+            f"Total changes: +{s['additions']}/-{s['deletions']} lines"
+        )
+
+        titles_by_repo: Dict[str, List[str]] = {}
+        top_repo_names = {r for r, _ in top_repos}
+        for repo, titles in s["pr_titles_by_repo"].items():
+            if repo not in top_repo_names:
+                continue
+            deduped = deduplicate_pr_titles(titles)
+            if deduped:
+                titles_by_repo[repo] = deduped[:10]
+
+        result.append(CompanySummary(
+            company=company,
+            users=sorted(s["users"]),
+            total_prs=s["total_prs"],
+            merged=s["merged"],
+            open=s["open"],
+            additions=s["additions"],
+            deletions=s["deletions"],
+            repos=repos_list,
+            activity_breakdown=dict(s["activity_breakdown"]),
+            pr_summary_text=pr_summary_text,
+            pr_titles_by_repo=titles_by_repo,
+        ))
+    result.sort(key=lambda c: c.total_prs, reverse=True)
     logger.info(
-        f"AGGREGATOR: aggregated into {len(result)} companies from "
-        f"{len(user_stats)} users (after filters)"
+        f"AGGREGATOR: aggregate_contributors — {len(result)} companies "
+        f"from {len(user_pr)} PR users + {len(user_activity)} activity users"
     )
     return result
 
@@ -179,27 +260,22 @@ def compute_top_contributors(
     pr_data: Dict[str, Any],
     companies: Dict[str, str],
     n: int = 3,
-) -> List[Dict[str, Any]]:
-    """Return top N contributors by PR count from pr_data buckets.
-
-    Excludes bots and users whose company was filtered out. Orders by
-    per-user doc_count (PR count) descending.
-    """
-    buckets = _find_buckets(pr_data)
-    candidates = []
-    for bucket in buckets:
-        username = bucket.get("key", "")
+) -> List[TopContributor]:
+    """Top N contributors by PR count, excluding bots and filtered companies."""
+    candidates: List[TopContributor] = []
+    for bucket in _pr_user_buckets(pr_data):
+        username = bucket.get("key") or ""
         if not username or company_resolver.is_bot(username):
             continue
         company = companies.get(username)
         if not company:
-            continue  # skip users not in companies dict (filtered or unknown)
-        candidates.append({
-            "username": username,
-            "company": company,
-            "pr_count": bucket.get("doc_count", 0),
-        })
-    candidates.sort(key=lambda x: x["pr_count"], reverse=True)
+            continue
+        candidates.append(TopContributor(
+            username=username,
+            company=company,
+            pr_count=bucket.get("doc_count", 0),
+        ))
+    candidates.sort(key=lambda c: c.pr_count, reverse=True)
     top = candidates[:n]
     logger.info(
         f"AGGREGATOR: compute_top_contributors — picked {len(top)} from "
@@ -208,109 +284,43 @@ def compute_top_contributors(
     return top
 
 
-def compute_top_repos(pr_data: Dict[str, Any], n: int = 3) -> List[Dict[str, Any]]:
-    """Return top N repositories by PR count.
-
-    Looks inside pr_data for a nested repo aggregation. If the LLM didn't
-    include one, returns an empty list (we log a warning).
-    """
-    buckets = _find_buckets(pr_data)
+def compute_top_repos(pr_data: Dict[str, Any], n: int = 3) -> List[TopRepo]:
+    """Top N repositories across all contributors by PR count."""
     repo_counts: Dict[str, int] = defaultdict(int)
-
-    for bucket in buckets:
-        for key, value in bucket.items():
-            if isinstance(value, dict) and "buckets" in value and "repo" in key.lower():
-                for repo_bucket in value["buckets"]:
-                    repo_counts[repo_bucket.get("key", "")] += repo_bucket.get("doc_count", 0)
-
-    if not repo_counts:
-        logger.info("AGGREGATOR: compute_top_repos — no nested repo aggregation found")
-        return []
-
+    for bucket in _pr_user_buckets(pr_data):
+        for rb in (bucket.get("by_repository") or {}).get("buckets", []):
+            k = rb.get("key", "")
+            if k:
+                repo_counts[k] += rb.get("doc_count", 0)
     sorted_repos = sorted(repo_counts.items(), key=lambda x: x[1], reverse=True)[:n]
-    return [{"repository": r, "pr_count": c} for r, c in sorted_repos]
+    logger.info(
+        f"AGGREGATOR: compute_top_repos — {len(repo_counts)} unique repos, "
+        f"returning top {len(sorted_repos)}"
+    )
+    return [TopRepo(repository=r, pr_count=c) for r, c in sorted_repos]
 
 
-def compute_pr_trend(trend_result: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract current vs previous month PR counts and compute change.
-
-    Handles multiple response shapes:
-      1) Top-level aggs with doc_count each: {"aggs":{"current":{"doc_count":X}, "previous":{"doc_count":Y}}}
-      2) Top-level aggs with value each:     {"aggs":{"current":{"value":X}, "previous":{"value":Y}}}
-      3) Single date_histogram bucket agg:   {"aggs":{"prs_by_month":{"buckets":[{"key_as_string":"2026-03","doc_count":Y},{"key_as_string":"2026-04","doc_count":X}]}}}
+def compute_trend(trend_result: Dict[str, Any]) -> tuple:
+    """Return (current_count, previous_count, change_percent) from a two-bucket
+    trend aggregation. Works for both PR and issue trend queries because we
+    wrote them with identical shapes (`current_month.doc_count`, `previous_month.doc_count`).
     """
-    if not trend_result:
-        logger.info("AGGREGATOR: compute_pr_trend — trend_result empty")
-        return {"pr_count_current": 0, "pr_count_previous": 0, "pr_change_percent": 0}
-
     aggs = trend_result.get("aggregations") or {}
+    current = (aggs.get("current_month") or {}).get("doc_count", 0)
+    previous = (aggs.get("previous_month") or {}).get("doc_count", 0)
+    change = round(((current - previous) / previous * 100), 1) if previous else 0.0
     logger.info(
-        f"AGGREGATOR: compute_pr_trend — aggregation keys={list(aggs.keys())}"
+        f"AGGREGATOR: compute_trend — current={current}, previous={previous}, change={change}%"
     )
-
-    current, previous = 0, 0
-
-    # Case 3: single bucket-style aggregation
-    for key, value in aggs.items():
-        if isinstance(value, dict) and "buckets" in value and isinstance(value["buckets"], list):
-            buckets = value["buckets"]
-            if len(buckets) >= 2:
-                # Sort by key (usually date string) so previous < current
-                def _bucket_sort_key(b):
-                    return b.get("key_as_string") or b.get("key") or ""
-                sorted_buckets = sorted(buckets, key=_bucket_sort_key)
-                previous = sorted_buckets[-2].get("doc_count", 0)
-                current = sorted_buckets[-1].get("doc_count", 0)
-                logger.info(
-                    f"AGGREGATOR: compute_pr_trend — using bucket agg '{key}': "
-                    f"previous={_bucket_sort_key(sorted_buckets[-2])} ({previous}), "
-                    f"current={_bucket_sort_key(sorted_buckets[-1])} ({current})"
-                )
-                break
-
-    # Cases 1 and 2: two separate top-level filters
-    if not current and not previous:
-        counts = []
-        for key, value in aggs.items():
-            if isinstance(value, dict):
-                if "doc_count" in value:
-                    counts.append((key, value["doc_count"]))
-                elif "value" in value and isinstance(value["value"], (int, float)):
-                    counts.append((key, int(value["value"])))
-        if len(counts) >= 2:
-            # If keys suggest current/previous order, use them; else take first two
-            named = {k.lower(): v for k, v in counts}
-            if any("prev" in k for k in named) or any("current" in k for k in named):
-                previous = next((v for k, v in named.items() if "prev" in k), 0)
-                current = next((v for k, v in named.items() if "current" in k or "now" in k), 0)
-                if not current and not previous:
-                    previous, current = counts[0][1], counts[1][1]
-            else:
-                # Unnamed: first = current (matches our prompt order), second = previous
-                current, previous = counts[0][1], counts[1][1]
-            logger.info(
-                f"AGGREGATOR: compute_pr_trend — picked current={current}, previous={previous} "
-                f"from named aggs {[c[0] for c in counts]}"
-            )
-
-    change = round(((current - previous) / previous * 100), 1) if previous else 0
-    logger.info(
-        f"AGGREGATOR: compute_pr_trend — current={current} previous={previous} change={change}%"
-    )
-
-    return {
-        "pr_count_current": current,
-        "pr_count_previous": previous,
-        "pr_change_percent": change,
-    }
+    return current, previous, change
 
 
-def extract_repo_counts(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Extract [{repository, count}] from an aggregation result."""
-    buckets = _find_buckets(result)
-    repo_counts = [
-        {"repository": b.get("key", ""), "count": b.get("doc_count", 0)}
+def extract_repo_counts(result: Dict[str, Any]) -> List[RepoCount]:
+    """Extract repo buckets from stale_prs / untriaged_issues response."""
+    buckets = _repo_buckets(result)
+    out = [
+        RepoCount(repository=b.get("key", ""), count=b.get("doc_count", 0))
         for b in buckets if b.get("key")
     ]
-    logger.info(f"AGGREGATOR: extract_repo_counts — extracted {len(repo_counts)} repos")
-    return repo_counts
+    logger.info(f"AGGREGATOR: extract_repo_counts — {len(out)} repos")
+    return out

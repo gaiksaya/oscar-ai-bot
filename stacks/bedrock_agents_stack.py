@@ -302,7 +302,7 @@ class OscarAgentsStack(Stack):
                - `target_channel` — the value from the `[CHANNEL: ...]` tag
                - `thread_ts` — the value from the `[THREAD_TS: ...]` tag (omit only if not present)
                - `initial_comment` — optional; only if the user specified a custom message
-            4. The action group runs asynchronously — it dispatches a background worker and returns within a second with a `status: "started"` acknowledgment. Respond to the user by relaying the `message` field from the response. Example: "Started generating the April 2026 newsletter. I'll post the file to this thread when ready (typically 7-10 minutes)."
+            4. The action group runs asynchronously — it dispatches a background worker and returns within a second with a `status: "started"` acknowledgment. Respond to the user by relaying the `message` field from the response. Example: "Generating April 2026 newsletter now!"
             5. Do NOT wait for the file — it is uploaded out-of-band by the background worker and will appear in the thread when ready.
             6. Do NOT format or paste any newsletter content yourself — the worker renders and uploads the final markdown file.
             7. If the response has an `error` field (not `status`), relay the error to the user and suggest they retry.

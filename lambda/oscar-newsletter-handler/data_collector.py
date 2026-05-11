@@ -1,54 +1,53 @@
 # Copyright OpenSearch Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Data collector — calls Metrics Agent 7 times to gather newsletter raw data."""
+"""Data collector — runs 7 explicit OpenSearch DSL queries by invoking the
+Metrics Lambda's `direct_query` handler directly via `lambda:Invoke`.
+
+Bypasses Bedrock so there's no LLM in the transport path — deterministic,
+fast, and free of the token-generation failure modes (index-name corruption,
+streaming timeouts) we hit when routing data through an agent.
+"""
 
 import json
 import logging
 import os
-import uuid
-from datetime import datetime
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 from typing import Any, Dict, Tuple
 
 import boto3
 from botocore.config import Config as BotoConfig
 
-from config import DEFAULT_PIPELINE
-
 logger = logging.getLogger(__name__)
 
-# Bedrock agent invocations with large streaming payloads can take well beyond
-# the default 60s read timeout. Give each call up to 4 minutes.
-_bedrock_runtime = boto3.client(
-    "bedrock-agent-runtime",
+# Direct Lambda invoke: each call is typically ~400ms (the Metrics Lambda's
+# actual work). Keep a generous connection pool for our 7 parallel invokes.
+_lambda_client = boto3.client(
+    "lambda",
     config=BotoConfig(
-        read_timeout=600,
+        read_timeout=60,
         connect_timeout=10,
         retries={"max_attempts": 2, "mode": "standard"},
+        max_pool_connections=10,
     ),
 )
+
+
+def _get_metrics_lambda_name() -> str:
+    """Resolve the metrics Lambda function name from env."""
+    explicit = os.environ.get("METRICS_LAMBDA_FUNCTION_NAME")
+    if explicit:
+        return explicit
+    env_name = os.environ.get("OSCAR_ENV", "dev")
+    return f"oscar-metrics-{env_name}"
 _ssm = boto3.client("ssm")
 
 
-def _get_agent_config() -> Tuple[str, str]:
-    """Read Metrics Agent ID and Alias from SSM at runtime."""
-    agent_id_param = os.environ.get("METRICS_AGENT_ID_PARAM_PATH")
-    agent_alias_param = os.environ.get("METRICS_AGENT_ALIAS_PARAM_PATH")
-    logger.info(
-        f"DATA_COLLECTOR: Looking up Metrics Agent SSM params "
-        f"id_path={agent_id_param} alias_path={agent_alias_param}"
-    )
-
-    if not agent_id_param or not agent_alias_param:
-        raise RuntimeError(
-            "METRICS_AGENT_ID_PARAM_PATH and METRICS_AGENT_ALIAS_PARAM_PATH must be set"
-        )
-
-    agent_id = _ssm.get_parameter(Name=agent_id_param)["Parameter"]["Value"]
-    agent_alias = _ssm.get_parameter(Name=agent_alias_param)["Parameter"]["Value"]
-    logger.info(f"DATA_COLLECTOR: Resolved Metrics Agent id={agent_id} alias={agent_alias}")
-    return agent_id, agent_alias
-
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _month_to_number(month: str) -> str:
     """Convert month name or number to zero-padded two-digit string."""
@@ -61,8 +60,21 @@ def _month_to_number(month: str) -> str:
     return datetime.strptime(month.strip()[:3], "%b").strftime("%m")
 
 
+def _month_date_range(month: str, year: str) -> Tuple[str, str]:
+    """Return (gte, lt) ISO date strings for the given calendar month."""
+    mm = _month_to_number(month)
+    y = int(year)
+    m = int(mm)
+    start = datetime(y, m, 1)
+    if m == 12:
+        end = datetime(y + 1, 1, 1)
+    else:
+        end = datetime(y, m + 1, 1)
+    return start.strftime("%Y-%m-%dT00:00:00Z"), end.strftime("%Y-%m-%dT00:00:00Z")
+
+
 def _previous_month(month: str, year: str) -> Tuple[str, str]:
-    """Return (previous_month_name, previous_year) given current month/year."""
+    """Return (previous_month_name, previous_year)."""
     dt = datetime.strptime(f"{_month_to_number(month)}-{year}", "%m-%Y")
     if dt.month == 1:
         prev = dt.replace(year=dt.year - 1, month=12)
@@ -71,171 +83,375 @@ def _previous_month(month: str, year: str) -> Tuple[str, str]:
     return prev.strftime("%B"), str(prev.year)
 
 
-def _invoke_agentic_query(agent_id: str, agent_alias: str, query: str, index: str) -> Dict[str, Any]:
-    """Invoke the Metrics Agent's agentic_query function via Bedrock."""
-    prompt = (
-        f"Call agentic_query with the following parameters and return ONLY the raw JSON "
-        f"response verbatim per the RAW RESPONSE MODE in your instructions — no prose, "
-        f"no markdown fences, nothing before the opening brace or after the closing brace:\n"
-        f"query: {query}\n"
-        f"index: {index}\n"
-        f"pipeline: {DEFAULT_PIPELINE}\n"
-        f"return_raw: true"
-    )
+def _invoke_direct_query(index: str, query_body: Dict[str, Any]) -> Dict[str, Any]:
+    """Invoke the Metrics Lambda's direct_query handler via lambda:Invoke.
 
-    session_id = str(uuid.uuid4())
-    logger.info(
-        f"DATA_COLLECTOR: Invoking metrics agent "
-        f"agent_id={agent_id} alias={agent_alias} session={session_id[:8]} "
-        f"index={index} query='{query[:120]}...'"
-    )
+    Constructs the same Bedrock action-group-shaped event that metrics Lambda
+    expects, so `handle_direct_query` in metrics_handler.py receives the
+    params exactly as it would from the Bedrock path.
+    """
+    function_name = _get_metrics_lambda_name()
+    body_str = json.dumps(query_body)
 
-    response = _bedrock_runtime.invoke_agent(
-        agentId=agent_id,
-        agentAliasId=agent_alias,
-        sessionId=session_id,
-        inputText=prompt,
-    )
-
-    # Parse streaming response
-    completion = ""
-    chunk_count = 0
-    for event in response.get("completion", []):
-        chunk = event.get("chunk", {})
-        if "bytes" in chunk:
-            completion += chunk["bytes"].decode("utf-8")
-            chunk_count += 1
+    event = {
+        "function": "direct_query",
+        "actionGroup": "directSearchActionGroup",
+        "parameters": [
+            {"name": "index", "type": "string", "value": index},
+            {"name": "query_body", "type": "string", "value": body_str},
+        ],
+    }
 
     logger.info(
-        f"DATA_COLLECTOR: Metrics agent returned "
-        f"chunks={chunk_count} completion_len={len(completion)}"
+        f"DATA_COLLECTOR: Invoking metrics Lambda '{function_name}' "
+        f"index={index} body_bytes={len(body_str)}"
     )
-    # Log full completion at INFO so we can diagnose parse issues
-    logger.info(f"DATA_COLLECTOR: Raw completion for index={index}: {completion[:4000]}")
 
-    # Try to extract JSON from the completion
     try:
-        start = completion.find("{")
-        end = completion.rfind("}")
-        if start >= 0 and end > start:
-            # strict=False allows literal newlines and control characters inside
-            # strings — the Metrics Agent's raw OpenSearch payloads routinely
-            # include \n inside issue body text.
-            parsed = json.loads(completion[start: end + 1], strict=False)
-            logger.info(
-                f"DATA_COLLECTOR: Parsed JSON for index={index} — "
-                f"keys={list(parsed.keys()) if isinstance(parsed, dict) else 'not-a-dict'}"
-            )
-            if isinstance(parsed, dict):
-                hits_count = parsed.get("hits", {}).get("total", {}).get("value") if "hits" in parsed else None
-                aggs = parsed.get("aggregations") or {}
-                aggs_keys = list(aggs.keys()) if isinstance(aggs, dict) else []
-                results_count = len(parsed.get("results", [])) if isinstance(parsed.get("results"), list) else None
-                logger.info(
-                    f"DATA_COLLECTOR: index={index} — "
-                    f"total_hits={parsed.get('total_hits', hits_count)}, "
-                    f"results_len={results_count}, aggregation_keys={aggs_keys}"
-                )
-            return parsed
-        else:
-            logger.warning(
-                f"DATA_COLLECTOR: No JSON braces found in completion for index={index}"
-            )
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(
-            f"DATA_COLLECTOR: Could not parse JSON from agent response for "
-            f"index={index}: {e}"
+        response = _lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(event).encode("utf-8"),
         )
-
-    return {"raw_completion": completion, "error": "Could not parse agent response"}
-
-
-def _safe_invoke(agent_id: str, agent_alias: str, query: str, index: str, section: str) -> Dict[str, Any]:
-    """Invoke with error handling — returns empty dict on failure."""
-    try:
-        result = _invoke_agentic_query(agent_id, agent_alias, query, index)
-        if "error" in result and "raw_completion" in result:
-            logger.warning(
-                f"DATA_COLLECTOR: section={section} returned an unparseable response"
-            )
-        return result
     except Exception as e:
-        logger.error(f"DATA_COLLECTOR: Failed for section={section}: {e}", exc_info=True)
+        logger.error(f"DATA_COLLECTOR: lambda:Invoke failed for index={index}: {e}")
+        return {"error": f"lambda:Invoke failed: {e}", "type": "lambda_invoke_error"}
+
+    status = response.get("StatusCode")
+    payload_raw = response.get("Payload").read() if response.get("Payload") else b""
+    payload_str = payload_raw.decode("utf-8") if payload_raw else ""
+    logger.info(
+        f"DATA_COLLECTOR: Metrics Lambda returned status={status} "
+        f"payload_bytes={len(payload_str)}"
+    )
+
+    if response.get("FunctionError"):
+        logger.error(
+            f"DATA_COLLECTOR: Metrics Lambda FunctionError for index={index}: "
+            f"{payload_str[:500]}"
+        )
+        return {"error": payload_str, "type": "metrics_lambda_error"}
+
+    # The metrics Lambda wraps its result in the Bedrock action-group response
+    # envelope: {messageVersion, response:{functionResponse:{responseBody:
+    # {TEXT:{body: "<json string>"}}}}}.
+    try:
+        envelope = json.loads(payload_str)
+    except json.JSONDecodeError as e:
+        logger.warning(f"DATA_COLLECTOR: envelope JSON parse failed for index={index}: {e}")
+        return {"error": f"envelope parse error: {e}", "raw_payload": payload_str[:500]}
+
+    body_text = (
+        envelope.get("response", {})
+        .get("functionResponse", {})
+        .get("responseBody", {})
+        .get("TEXT", {})
+        .get("body")
+    )
+    if body_text is None:
+        logger.warning(
+            f"DATA_COLLECTOR: no body in envelope for index={index}; "
+            f"envelope_keys={list(envelope.keys())}"
+        )
+        return envelope
+
+    try:
+        parsed = json.loads(body_text, strict=False)
+    except json.JSONDecodeError as e:
+        logger.warning(f"DATA_COLLECTOR: body JSON parse failed for index={index}: {e}")
+        return {"error": f"body parse error: {e}", "raw_body": body_text[:500]}
+
+    hits_total = parsed.get("hits", {}).get("total", {}).get("value") if "hits" in parsed else None
+    agg_keys = list((parsed.get("aggregations") or {}).keys())
+    logger.info(
+        f"DATA_COLLECTOR: Parsed response for index={index} — "
+        f"hits_total={hits_total}, aggregation_keys={agg_keys}"
+    )
+    return parsed
+
+def _safe_invoke(index: str, query_body: Dict[str, Any], section: str) -> Dict[str, Any]:
+    """Invoke direct_query with defensive error handling."""
+    try:
+        return _invoke_direct_query(index, query_body)
+    except Exception as e:
+        logger.error(f"DATA_COLLECTOR: section={section} failed: {e}", exc_info=True)
         return {}
 
 
-def collect(month: str, year: str) -> Dict[str, Any]:
-    """Call the Metrics Agent 7 times in parallel to gather all newsletter data.
+# ---------------------------------------------------------------------------
+# DSL templates
+# ---------------------------------------------------------------------------
 
-    Returns dict of raw results keyed by section name.
+def _build_dsl_new_maintainers(gte: str, lt: str) -> Dict[str, Any]:
+    """Closed .github issues with github-request label, title matching
+    'add or adding maintainer' with fuzziness, and body mentioning
+    'User Permission'. DSL verified against the April 2026 data."""
+    return {
+        "size": 100,
+        "query": {
+            "bool": {
+                "must": [
+                    {"match": {"title": {"query": "add or adding maintainer", "fuzziness": "AUTO"}}},
+                    {"match": {"body": {"query": "User Permission", "fuzziness": "AUTO"}}},
+                ],
+                "filter": [
+                    {"term": {"state.keyword": "closed"}},
+                    {"term": {"repository.keyword": ".github"}},
+                    {"term": {"issue_labels.keyword": "github-request"}},
+                    {"range": {"closed_at": {"gte": gte, "lt": lt}}},
+                ],
+            }
+        },
+    }
+
+
+def _build_dsl_new_repositories(gte: str, lt: str) -> Dict[str, Any]:
+    """Closed .github issues with repository-request label."""
+    return {
+        "size": 50,
+        "_source": ["title", "html_url", "body", "user_login", "closed_at", "issue_labels"],
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"state.keyword": "closed"}},
+                    {"term": {"repository.keyword": ".github"}},
+                    {"term": {"issue_labels.keyword": "repository-request"}},
+                    {"range": {"closed_at": {"gte": gte, "lt": lt}}},
+                ]
+            }
+        },
+    }
+
+
+def _build_dsl_pr_data(gte: str, lt: str) -> Dict[str, Any]:
+    """PRs grouped by user_login with per-user merged breakdown, top-5 repos
+    (with sample PR titles per repo), and additions/deletions totals."""
+    return {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range": {"created_at": {"gte": gte, "lt": lt}}},
+                ]
+            }
+        },
+        "aggs": {
+            "by_user_login": {
+                "terms": {"field": "user_login.keyword", "size": 10000},
+                "aggs": {
+                    "total_additions": {"sum": {"field": "additions"}},
+                    "total_deletions": {"sum": {"field": "deletions"}},
+                    "by_merged": {
+                        "terms": {"field": "merged", "size": 5}
+                    },
+                    "by_repository": {
+                        "terms": {"field": "repository.keyword", "size": 5},
+                        "aggs": {
+                            "sample_titles": {
+                                "top_hits": {
+                                    "size": 10,
+                                    "_source": {"includes": ["title"]},
+                                    "sort": [{"created_at": "desc"}],
+                                }
+                            }
+                        },
+                    },
+                },
+            }
+        },
+    }
+
+
+def _build_dsl_activity_events(gte: str, lt: str) -> Dict[str, Any]:
+    """Activity events grouped by sender then by type (counts only)."""
+    return {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range": {"created_at": {"gte": gte, "lt": lt}}},
+                ]
+            }
+        },
+        "aggs": {
+            "by_sender": {
+                "terms": {"field": "sender.keyword", "size": 10000},
+                "aggs": {
+                    "by_type": {
+                        "terms": {"field": "type.keyword", "size": 20}
+                    }
+                },
+            }
+        },
+    }
+
+
+def _build_dsl_stale_prs() -> Dict[str, Any]:
+    """Top 5 repositories by count of open PRs not updated in the last 60 days."""
+    cutoff = (datetime.utcnow() - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"state.keyword": "open"}},
+                    {"range": {"updated_at": {"lt": cutoff}}},
+                ]
+            }
+        },
+        "aggs": {
+            "by_repository": {
+                "terms": {"field": "repository.keyword", "size": 5}
+            }
+        },
+    }
+
+
+def _build_dsl_untriaged_issues() -> Dict[str, Any]:
+    """Top 5 repositories by count of open issues with untriaged label older than 14 days."""
+    cutoff = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"state.keyword": "open"}},
+                    {"term": {"issue_labels.keyword": "untriaged"}},
+                    {"range": {"created_at": {"lt": cutoff}}},
+                ]
+            }
+        },
+        "aggs": {
+            "by_repository": {
+                "terms": {"field": "repository.keyword", "size": 5}
+            }
+        },
+    }
+
+
+def _build_dsl_pr_trend(
+    current_gte: str, current_lt: str, previous_gte: str, previous_lt: str
+) -> Dict[str, Any]:
+    """Total PR count for current and previous month — two filters aggregation.
+
+    Excludes bot authors (user_login ending in `[bot]` or `-bot`) so counts
+    align with LFX Insights.
     """
-    import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    bot_exclusions = {
+        "must_not": [
+            {"wildcard": {"user_login.keyword": "*[bot]"}},
+            {"wildcard": {"user_login.keyword": "*-bot"}},
+        ]
+    }
+    return {
+        "size": 0,
+        "aggs": {
+            "current_month": {
+                "filter": {
+                    "bool": {
+                        "filter": [
+                            {"range": {"created_at": {"gte": current_gte, "lt": current_lt}}},
+                        ],
+                        **bot_exclusions,
+                    }
+                }
+            },
+            "previous_month": {
+                "filter": {
+                    "bool": {
+                        "filter": [
+                            {"range": {"created_at": {"gte": previous_gte, "lt": previous_lt}}},
+                        ],
+                        **bot_exclusions,
+                    }
+                }
+            },
+        },
+    }
 
-    agent_id, agent_alias = _get_agent_config()
+
+def _build_dsl_issue_trend(
+    current_gte: str, current_lt: str, previous_gte: str, previous_lt: str
+) -> Dict[str, Any]:
+    """Issues CLOSED (resolved) in current vs previous month — two filters.
+
+    Excludes pull requests (GitHub's REST API returns PRs as issues with
+    `issue_pull_request: true`; LFX counts them separately).
+    """
+    return {
+        "size": 0,
+        "aggs": {
+            "current_month": {
+                "filter": {
+                    "bool": {
+                        "filter": [
+                            {"range": {"closed_at": {"gte": current_gte, "lt": current_lt}}},
+                            {"term": {"issue_pull_request": False}},
+                        ]
+                    }
+                }
+            },
+            "previous_month": {
+                "filter": {
+                    "bool": {
+                        "filter": [
+                            {"range": {"closed_at": {"gte": previous_gte, "lt": previous_lt}}},
+                            {"term": {"issue_pull_request": False}},
+                        ]
+                    }
+                }
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def collect(month: str, year: str) -> Dict[str, Any]:
+    """Run 7 explicit-DSL queries in parallel via direct_query.
+
+    Returns dict of raw OpenSearch responses keyed by section name.
+    """
     mm = _month_to_number(month)
     activity_index = f"github-user-activity-events-{mm}-{year}"
+    current_gte, current_lt = _month_date_range(month, year)
     prev_month, prev_year = _previous_month(month, year)
+    previous_gte, previous_lt = _month_date_range(prev_month, prev_year)
 
     logger.info(
         f"DATA_COLLECTOR: Collecting for {month} {year} "
-        f"(activity_index={activity_index}, prev={prev_month} {prev_year})"
+        f"(activity_index={activity_index}, current={current_gte}→{current_lt}, "
+        f"previous={previous_gte}→{previous_lt})"
     )
 
     sections = [
-        (
-            "new_maintainers",
-            "github_issues",
-            f"Show all closed issues in .github repository for {month} {year} with label "
-            f"github-request. Should have add/adding maintainer in the body AND type of "
-            f"request User Permission or repository Management in the body.",
-        ),
-        (
-            "new_repositories",
-            "github_issues",
-            f"Show all closed issues in .github repository with label repository-request "
-            f"for {month} {year}",
-        ),
-        (
-            "pr_data",
-            "github_pulls",
-            f"Show all pull requests grouped by user_login with count, total additions "
-            f"and deletions for {month} {year}",
-        ),
-        (
-            "activity_events",
-            activity_index,
-            f"Show document count grouped by sender and then by type for {month} {year}. "
-            f"Do not use value_count or any metric aggregation — just the default doc_count "
-            f"from terms aggregations.",
-        ),
-        (
-            "stale_prs",
-            "github_pulls",
-            "Show top 5 repositories by count of open pull requests not updated in last 60 days",
-        ),
-        (
-            "untriaged_issues",
-            "github_issues",
-            "Show top 5 repositories with the highest count of open issues with label "
-            "untriaged older than 14 days, grouped by repository",
-        ),
-        (
-            "pr_trend",
-            "github_pulls",
-            f"Show total count of pull requests created in {month} {year} and "
-            f"total count created in {prev_month} {prev_year}",
-        ),
+        ("new_maintainers", "github_issues",
+         _build_dsl_new_maintainers(current_gte, current_lt)),
+        ("new_repositories", "github_issues",
+         _build_dsl_new_repositories(current_gte, current_lt)),
+        ("pr_data", "github_pulls",
+         _build_dsl_pr_data(current_gte, current_lt)),
+        ("activity_events", activity_index,
+         _build_dsl_activity_events(current_gte, current_lt)),
+        ("stale_prs", "github_pulls",
+         _build_dsl_stale_prs()),
+        ("untriaged_issues", "github_issues",
+         _build_dsl_untriaged_issues()),
+        ("pr_trend", "github_pulls",
+         _build_dsl_pr_trend(current_gte, current_lt, previous_gte, previous_lt)),
+        ("issue_trend", "github_issues",
+         _build_dsl_issue_trend(current_gte, current_lt, previous_gte, previous_lt)),
     ]
 
-    def _run_section(idx: int, section: str, index: str, query: str) -> Tuple[str, Dict[str, Any], float]:
-        start = time.time()
+    def _run_section(idx: int, section: str, index: str, body: Dict[str, Any]):
+        started = time.time()
         logger.info(
-            f"DATA_COLLECTOR: [{idx}/{len(sections)}] Starting section='{section}' "
-            f"index='{index}'"
+            f"DATA_COLLECTOR: [{idx}/{len(sections)}] Starting section='{section}' index='{index}'"
         )
-        result = _safe_invoke(agent_id, agent_alias, query, index, section)
-        elapsed = time.time() - start
+        result = _safe_invoke(index, body, section)
+        elapsed = time.time() - started
         is_empty = not result or (
             "error" in result and "raw_completion" in result
         )
@@ -244,22 +460,19 @@ def collect(month: str, year: str) -> Dict[str, Any]:
             f"in {elapsed:.2f}s — empty={is_empty}, "
             f"top_level_keys={list(result.keys()) if isinstance(result, dict) else 'n/a'}"
         )
-        return section, result, elapsed
+        return section, result
 
     results: Dict[str, Any] = {}
     total_started = time.time()
-
-    # 7 parallel workers so all calls run concurrently. Each Bedrock invoke is
-    # IO-bound (streaming from Bedrock), so threading gives near-linear speedup.
     with ThreadPoolExecutor(max_workers=len(sections)) as executor:
         futures = {
-            executor.submit(_run_section, idx, section, index, query): section
-            for idx, (section, index, query) in enumerate(sections, 1)
+            executor.submit(_run_section, idx, s, i, b): s
+            for idx, (s, i, b) in enumerate(sections, 1)
         }
         for future in as_completed(futures):
             section = futures[future]
             try:
-                name, result, elapsed = future.result()
+                name, result = future.result()
                 results[name] = result
             except Exception as e:
                 logger.error(f"DATA_COLLECTOR: section={section} raised: {e}", exc_info=True)
