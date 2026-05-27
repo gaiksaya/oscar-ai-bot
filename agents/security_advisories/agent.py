@@ -60,7 +60,7 @@ class SecurityAdvisoriesAgent(OscarAgent):
         return "Security-Advisories-Specialist"
 
     def get_access_level(self):
-        return "privileged"
+        return "both"
 
     def uses_knowledge_base(self):
         return False

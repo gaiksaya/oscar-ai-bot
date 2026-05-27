@@ -12,6 +12,7 @@ import time
 from typing import Callable
 
 from config import config
+from constants import LIMITED_ACCESS_MESSAGE
 from input_validator import InputValidationError, validate_and_sanitize
 
 logger = logging.getLogger(__name__)
@@ -143,8 +144,6 @@ class MessageProcessor:
             # ALWAYS add user context to query for agent to use as needed
             query = self.add_user_context_to_query(query, user_id)
             logger.info(f"Added user context to query: {query}")
-            logger.info(f"Processing automated message sending request from authorized user {user_id}")
-            # Continue with normal agent processing - agent will handle message sending via action group
 
             # Get context from storage and format for query
             stored_context = self.storage.get_context(thread_key)
@@ -163,6 +162,16 @@ class MessageProcessor:
             # If timeout occurred, response will be None
             if response is None:
                 return
+
+            # Post-processing override for limited-access security advisory responses.
+            # The LLM cannot be reliably constrained via prompt instructions alone, so
+            # we enforce the limited-tier response at the application layer: if the user
+            # is not privileged AND the response contains the advisory dashboard link
+            # (indicating the security advisories collaborator was invoked), replace the
+            # entire response with the canonical dashboard-only message.
+            if not privilege and response and 'advisories.opensearch.org' in response:
+                response = LIMITED_ACCESS_MESSAGE
+                logger.info("Limited-tier override applied — replaced LLM response with canonical dashboard message")
 
             # Handle confirmation detection and warning reaction
             response = self._handle_confirmation_detection(response, channel, thread_ts)
