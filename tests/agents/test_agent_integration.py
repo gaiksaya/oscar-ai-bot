@@ -15,6 +15,7 @@ from agents.base_agent import LambdaConfig, OscarAgent
 from agents.github import GitHubAgent
 from agents.jenkins import JenkinsAgent
 from agents.metrics import MetricsAgent
+from agents.release import ReleaseAgent
 from agents.SecurityAdvisories import SecurityAdvisoriesAgent
 from stacks.bedrock_agents_stack import OscarAgentsStack
 from stacks.lambda_stack import OscarLambdaStack
@@ -23,7 +24,7 @@ from stacks.secrets_stack import OscarSecretsStack
 from stacks.storage_stack import OscarStorageStack
 from stacks.vpc_stack import OscarVpcStack
 
-ALL_AGENTS = [JenkinsAgent(), MetricsAgent(), SecurityAdvisoriesAgent(), GitHubAgent()]
+ALL_AGENTS = [JenkinsAgent(), MetricsAgent(), SecurityAdvisoriesAgent(), GitHubAgent(), ReleaseAgent()]
 AGENT_IDS = [a.name for a in ALL_AGENTS]
 ENV = Environment(account="123456789012", region="us-east-1")
 
@@ -94,8 +95,8 @@ class TestAgentContract:
 class TestAgentRegistration:
     """Validate the specific agent set and their access levels."""
 
-    def test_four_agents_registered(self):
-        assert len(ALL_AGENTS) == 4
+    def test_five_agents_registered(self):
+        assert len(ALL_AGENTS) == 5
 
     def test_agent_names_are_unique(self):
         names = [p.name for p in ALL_AGENTS]
@@ -112,6 +113,9 @@ class TestAgentRegistration:
 
     def test_github_is_privileged_only(self):
         assert GitHubAgent().get_access_level() == "privileged"
+
+    def test_release_access_level(self):
+        assert ReleaseAgent().get_access_level() == "both"
 
 
 # ---------------------------------------------------------------------------
@@ -278,15 +282,16 @@ class TestAgentStackWiring:
         assert github_fn is not metrics_fn
 
     def test_lambda_function_count(self, stacks):
-        """Should be 4 agent entries + 3 core = 7 keys in lambda_functions dict."""
-        # 4 agents + supervisor-agent + communication-handler + github-webhook-handler = 7 entries
-        assert len(stacks.lambda_functions) == 7
+        """Should be 5 agent entries + 3 core = 8 keys in lambda_functions dict."""
+        # 5 agents + supervisor-agent + communication-handler + github-webhook-handler = 8 entries
+        assert len(stacks.lambda_functions) == 8
 
     def test_lambda_template_function_count(self, stacks):
-        """CloudFormation template should have 7 Lambda functions
-        (supervisor + communication + github-webhook-handler + jenkins + metrics + security-advisories + github)."""
+        """CloudFormation template should have 8 Lambda functions
+        (supervisor + communication + github-webhook-handler + jenkins + metrics
+        + security-advisories + github + release)."""
         template = Template.from_stack(stacks)
-        template.resource_count_is("AWS::Lambda::Function", 7)
+        template.resource_count_is("AWS::Lambda::Function", 8)
 
 
 # ---------------------------------------------------------------------------

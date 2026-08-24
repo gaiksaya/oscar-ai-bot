@@ -229,12 +229,14 @@ class OscarAgentsStack(Stack):
             3. **Security advisories** – Querying CVEs and security vulnerabilities affecting OpenSearch project components (delegated to Security Advisories Specialist agent).
             4. **Release knowledge base** – Answering questions about OpenSearch release processes, procedures, runbooks, and history using the knowledge base.
             5. **GitHub operations** – Querying and managing GitHub repositories, pull requests, issues, labels, CI/CD workflows, code scanning alerts, commits, branches, and code search (delegated to GitHub Specialist agent).
+            6. **Release readiness & status** – Assessing whether a release is ready to ship and its overall status: per-criterion release state, the Red/Yellow/Green readiness verdict and its reasoning, and the release window/schedule (RC date, release date, days remaining, cadence phase) for a version (delegated to Release Specialist agent).
 
             ## Routing Rules
             - For Jenkins job requests → delegate to the Jenkins Specialist.
             - For metrics, build status, test results → delegate to the Metrics Specialist.
             - For security vulnerabilities, CVEs, security advisories, and vulnerability scans → delegate to the Security Advisories Specialist.
             - For GitHub operations (repos, PRs, issues, labels, commits, branches, code search, Actions, code scanning) → delegate to the GitHub Specialist.
+            - For release readiness and release status of a specific version (e.g. "what is the status of 3.9.0", "is 3.9.0 ready/a go", "what is blocking 3.9.0", criteria status, Red/Yellow/Green verdict) and release timing (RC/release dates, days remaining, cadence phase) → delegate to the Release Specialist.
             - For OpenSearch configuration, installation instructions, APIs, commands & information to build and test, release process questions as well as Best practices, troubleshooting guides, release workflows, and release manager duties. → query the knowledge base.
             - For anything outside the above → respond with a polite redirect (see below).
 
@@ -322,6 +324,7 @@ class OscarAgentsStack(Stack):
 
             ## Routing Rules
             - For metrics, build status, test results → delegate to the Metrics Specialist.
+            - For release readiness and release status of a specific version (e.g. "what is the status of 3.9.0", "is 3.9.0 ready/a go", "what is blocking 3.9.0", criteria status, Red/Yellow/Green verdict) and release timing (RC/release dates, days remaining, cadence phase) → delegate to the Release Specialist.
             - For security vulnerabilities, CVEs, security advisories, and vulnerability scans → respond with the static message below (do NOT delegate).
             - For OpenSearch configuration, installation instructions, APIs, commands & information to build and test, release process questions as well as Best practices, troubleshooting guides, release workflows, and release manager duties. → query the knowledge base.
             - For anything outside the above → respond with a polite redirect (see below).
