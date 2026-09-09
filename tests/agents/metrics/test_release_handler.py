@@ -232,6 +232,80 @@ class TestGetReleaseWindow:
         assert result['found'] is False
 
 
+class TestListActiveReleases:
+
+    @staticmethod
+    def _schedule_hit(version, release_date, rc_date, registered_at, status='active'):
+        return {'_source': {
+            'version': version,
+            'status': status,
+            'rc_date': rc_date,
+            'release_date': release_date,
+            'registered_at': registered_at,
+            'release_manager': 'someone',
+        }}
+
+    def test_query_filters_on_active_status(self):
+        handler, mock_aws, _ = _load_handler()
+        handler.handle_list_active_releases({})
+
+        _, path, query = mock_aws.opensearch_request.call_args[0]
+        assert path == '/opensearch_release_schedule/_search'
+        assert {'term': {'status.keyword': 'active'}} in query['query']['bool']['filter']
+        assert query['sort'] == [{'release_date': {'order': 'asc', 'unmapped_type': 'date'}}]
+
+    def test_returns_soonest_release_first(self):
+        response = {'hits': {'hits': [
+            self._schedule_hit('4.0.0', '2026-12-01', '2026-11-15', '2026-08-01T00:00:00Z'),
+            self._schedule_hit('3.9.0', '2026-09-29', '2026-09-15', '2026-08-01T00:00:00Z'),
+        ]}}
+        handler, _, _ = _load_handler(opensearch_response=response)
+        result = handler.handle_list_active_releases({})
+        assert [r['version'] for r in result['releases']] == ['3.9.0', '4.0.0']
+        assert result['total_results'] == 2
+
+    def test_reduces_reregistered_versions_to_newest(self):
+        response = {'hits': {'hits': [
+            self._schedule_hit('3.9.0', '2026-09-29', '2026-09-15', '2026-08-01T00:00:00Z'),
+            self._schedule_hit('3.9.0', '2026-10-06', '2026-09-22', '2026-09-05T00:00:00Z'),
+        ]}}
+        handler, _, _ = _load_handler(opensearch_response=response)
+        result = handler.handle_list_active_releases({})
+        assert result['total_results'] == 1
+        assert result['releases'][0]['release_date'] == '2026-10-06'
+
+    def test_days_and_phase_computed(self):
+        response = {'hits': {'hits': [
+            self._schedule_hit('3.9.0', '2026-09-29', '2026-09-15', '2026-08-01T00:00:00Z'),
+        ]}}
+        handler, _, _ = _load_handler(opensearch_response=response)
+        fake_now = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(handler, '_now', return_value=fake_now):
+            release = handler.handle_list_active_releases({})['releases'][0]
+        assert release['days_to_rc'] == 14
+        assert release['days_to_release'] == 28
+        assert release['cadence_phase'] == 'pre_rc_daily'
+
+    def test_no_active_releases(self):
+        handler, _, _ = _load_handler()
+        result = handler.handle_list_active_releases({})
+        assert result['total_results'] == 0
+        assert result['releases'] == []
+
+    def test_releases_without_dates_sort_last(self):
+        response = {'hits': {'hits': [
+            self._schedule_hit('4.0.0', None, None, '2026-08-01T00:00:00Z'),
+            self._schedule_hit('3.9.0', '2026-09-29', '2026-09-15', '2026-08-01T00:00:00Z'),
+        ]}}
+        handler, _, _ = _load_handler(opensearch_response=response)
+        result = handler.handle_list_active_releases({})
+        assert [r['version'] for r in result['releases']] == ['3.9.0', '4.0.0']
+
+    def test_query_failure_surfaces_error(self):
+        handler, _, _ = _load_handler(opensearch_error=Exception('boom'))
+        assert handler.handle_list_active_releases({})['type'] == 'query_error'
+
+
 class TestCadencePhase:
 
     def test_phases(self):

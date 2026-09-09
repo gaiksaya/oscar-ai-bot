@@ -61,6 +61,11 @@ def get_action_groups(lambda_arn: str) -> List[bedrock.CfnAgent.AgentActionGroup
                         },
                     ),
                     bedrock.CfnAgent.FunctionProperty(
+                        name="list_active_releases",
+                        description="List every release currently in flight, soonest first, with RC and release dates, days remaining, cadence phase, and release manager. Use this when the user asks which releases are active, in flight, or upcoming, without naming a version.",
+                        parameters={},
+                    ),
+                    bedrock.CfnAgent.FunctionProperty(
                         name="query_release_state",
                         description="Ask a free-form question about release-readiness criteria or the release schedule using natural language, e.g. 'which components are blocking 3.9.0', 'which criteria changed in the last day', 'which releases are active'. Use get_release_status for the overall verdict and get_release_window for dates instead of this.",
                         parameters={
