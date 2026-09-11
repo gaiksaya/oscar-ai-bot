@@ -23,7 +23,11 @@ PHASE_INTERVAL_HOURS: Dict[str, Optional[int]] = {
     'pre_rc_frequent': 6,
     'rc_to_release': 24,
     'final_push': 6,
+    # An active release past its date is late by definition and the RM already knows it, so
+    # it stays reported but every two days rather than nagging every six hours.
+    'overdue': 48,
     'released': None,
+    'cancelled': None,
     'not_scheduled': None,
 }
 

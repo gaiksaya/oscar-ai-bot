@@ -32,10 +32,15 @@ class OscarStorageStack(Stack):
 
     CONTEXT_TABLE_NAME = "oscar-agent-context"
     IDENTITY_TABLE_PREFIX = "oscar-identity"
+    RELEASE_NOTIFY_TABLE_NAME = "oscar-release-notify-state"
 
     @classmethod
     def get_dynamodb_table_name(cls, environment: str) -> str:
         return f"{cls.CONTEXT_TABLE_NAME}-{environment}"
+
+    @classmethod
+    def get_release_notify_table_name(cls, environment: str) -> str:
+        return f"{cls.RELEASE_NOTIFY_TABLE_NAME}-{environment}"
 
     def __init__(self, scope: Construct, construct_id: str, environment: str, workspace_id: Optional[str] = None, **kwargs) -> None:
         """
@@ -72,6 +77,9 @@ class OscarStorageStack(Stack):
         self.identity_table: Optional[dynamodb.Table] = None
         if workspace_id:
             self.identity_table = self._create_identity_table(workspace_id, removal_policy)
+
+        # Last-posted state for the release notifier
+        self.release_notify_table = self._create_release_notify_table(removal_policy)
 
         # Create monitoring and alerting for context table only
         self._create_context_monitoring(environment)
@@ -131,6 +139,22 @@ class OscarStorageStack(Stack):
         )
 
         return table
+
+    def _create_release_notify_table(self, removal_policy: RemovalPolicy) -> dynamodb.Table:
+        """Create the table holding what the release notifier last posted per version.
+
+        One item per release version, keyed on the version string, recording the verdict and
+        outstanding criteria of the last post. The notifier reads it to suppress duplicate
+        posts, so losing an item costs at most one repeated message - not correctness.
+        """
+        return dynamodb.Table(
+            self, "ReleaseNotifyStateTable",
+            table_name=self.get_release_notify_table_name(self.env_name),
+            partition_key=dynamodb.Attribute(name="version", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=removal_policy,
+            encryption=dynamodb.TableEncryption.AWS_MANAGED,
+        )
 
     def _create_context_monitoring(self, environment: str) -> None:
         """

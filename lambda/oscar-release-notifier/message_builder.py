@@ -26,6 +26,7 @@ PHASE_FOCUS = {
     'pre_rc_frequent': 'entrance',
     'rc_to_release': 'exit',
     'final_push': 'exit',
+    'overdue': 'exit',
 }
 
 PHASE_LABEL = {
@@ -33,7 +34,9 @@ PHASE_LABEL = {
     'pre_rc_frequent': 'RC imminent',
     'rc_to_release': 'RC cut, approaching release',
     'final_push': 'final stretch before release',
+    'overdue': 'past its release date',
     'released': 'released',
+    'cancelled': 'cancelled',
     'out_of_window': 'early',
     'not_scheduled': 'no dates registered',
 }
